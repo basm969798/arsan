@@ -1,90 +1,142 @@
-🚀 Architecture النهائي الحقيقي لـ Arsan
-⭐ الفكرة الأساسية:
-🔥 Frontend منفصل
-🔥 Backend API منفصل (API-first)
-🔥 Database و Redis مستقلين
+# Arsan - System Architecture
 
-🧱 المخطط الكامل (الصورة الكبيرة)
-               Users (Companies)
-                        |
-                        ▼
-              Nginx Proxy Manager (SSL)
-                        |
-        -------------------------------------
-        |                                   |
-        ▼                                   ▼
-Frontend (Next.js)                 Backend API (Node.js)
-واجهة المستخدم                     منطق النظام الحقيقي
-        |                                   |
-        |------------ API Requests ---------|
-                        |
-                        ▼
-            -----------------------------
-            PostgreSQL (arsan-db)
-            Redis (arsan-redis)
-            -----------------------------
+---
 
+## ⭐ الفكرة الأساسية
 
-📦 شرح كل جزء ببساطة
-🎨 1️⃣ Frontend
-Next.js (أفضل خيار حالياً).
-يعرض:
-الكتالوج
-الطلبات
-لوحة التحكم
-لا يحتوي منطق ثقيل.
+- Frontend منفصل.
+- Backend API منفصل (API-first).
+- Database و Redis مستقلين.
+- Backend هو المصدر الوحيد للحقيقة (Single Source of Truth).
 
-🧠 2️⃣ Backend API (قلب النظام)
-هذا أهم جزء.
+---
+
+## 🧱 المخطط العام للنظام
+
+Users (Companies)
+
+        |
+        ▼
+
+Nginx Proxy Manager (SSL + Routing)
+
+        |
+-------------------------------------------------
+|                                               |
+▼                                               ▼
+
+Frontend (Next.js)                    Backend API (Node.js)
+واجهة المستخدم                         منطق النظام الحقيقي
+
+                |-------- API Requests --------|
+
+                                |
+                                ▼
+
+                -----------------------------------
+                PostgreSQL (arsan-db)
+                Redis (arsan-redis)
+                -----------------------------------
+
+---
+
+## 🎨 Frontend (Next.js)
+
+- عرض الكتالوج.
+- إدارة الطلبات.
+- لوحة التحكم.
+- لا يحتوي business logic ثقيل.
+- يعتمد على Backend API فقط.
+
+---
+
+## 🧠 Backend API (Core System)
+
 يحتوي:
-منطق العمل
-إدارة الحالات
-الصلاحيات
-البحث
-الإشعارات
-API للشركاء مستقبلاً
-مثال:
+
+- منطق العمل (Business Logic)
+- إدارة الحالات (State Management)
+- الأدوار والصلاحيات
+- البحث
+- الإشعارات
+- API للشركاء مستقبلاً
+
+أمثلة:
+
 POST /api/orders
 GET /api/catalog
 POST /api/login
 
+---
 
-🗄️ 3️⃣ PostgreSQL
+## 🗄️ Database (PostgreSQL)
+
 يخزن:
-الشركات
-المستخدمين
-السيارات
-الطلبات
 
-⚡ 4️⃣ Redis
+- الشركات (Companies)
+- المستخدمين (Users)
+- السيارات (Vehicles)
+- الطلبات (Orders)
+
+---
+
+## ⚡ Redis
+
 يستخدم لـ:
-cache
-background jobs
-queues
-notifications
 
-🌐 5️⃣ Nginx Proxy Manager
-SSL
-domain routing
-مثال:
-arsan.com → frontend
-api.arsan.com → backend
+- Cache
+- Background Jobs
+- Queues
+- Notifications
 
+---
 
-📁 الهيكل النهائي داخل GitHub
+## 🌐 Reverse Proxy (Nginx Proxy Manager)
+
+- SSL
+- Domain routing
+
+Examples:
+
+arsan.com → Frontend
+api.arsan.com → Backend
+
+---
+
+## 🔌 API Communication Rules
+
+- Frontend communicates with Backend via HTTP API only.
+- No direct database access from frontend.
+- Backend is the single source of truth.
+
+---
+
+## 🏢 Multi-tenant Design (B2B Core)
+
+- System is company-based.
+- Company is the root entity.
+- All business data belongs to a company.
+- company_id required for core entities.
+
+---
+
+## 🔄 State Ownership
+
+- Backend manages all state transitions.
+- Frontend cannot change business state directly.
+
+---
+
+## 📁 Repository Structure
+
 arsan/
 
   backend/
-     src/
-     Dockerfile
+    src/
+    Dockerfile
 
   frontend/
-     src/
-     Dockerfile
+    src/
+    Dockerfile
 
   docker-compose.yml
-
-
-
-
-
