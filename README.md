@@ -1,3 +1,33 @@
+# 🤖 AGENT EXECUTION CONTEXT — PHASE HARD LOCK (DO NOT MODIFY)
+
+You are building the Arsan platform.
+
+PHASE LOCK ACTIVE:
+Current phase: PHASE_1_SCAFFOLD_ONLY.
+
+CRITICAL:
+You MUST ignore all phases beyond PHASE_1.
+You MUST NOT read or analyze SYSTEM_DESIGN.md during this phase.
+You MUST NOT implement business logic.
+You MUST NOT implement database logic.
+You MUST NOT generate domain entities.
+You MUST NOT modify architecture documents.
+
+Allowed scope:
+- setup.sh
+- backend scaffold
+- frontend scaffold
+- Clean Architecture folder structure
+
+Execution order:
+1) Run setup.sh
+2) Verify backend scaffold created
+3) Verify frontend scaffold created
+4) Verify clean architecture folders created
+5) STOP immediately after verification
+
+DO NOT CONTINUE beyond scaffold generation.
+
 # Arsan — BUILD PLAN
 
 This document defines the official build roadmap for the Arsan platform.
@@ -151,5 +181,6 @@ Add notification architecture.
 ## FINAL GOAL
 
 A professional scalable NestJS backend matching BACKEND_STRUCTURE.md exactly.
+
 
 
