@@ -1,1 +1,77 @@
-ن
+version: "3.9"
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: arsan-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: arsan
+      POSTGRES_USER: arsan_user
+      POSTGRES_PASSWORD: arsan_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - arsan-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arsan_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: arsan-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - arsan-network
+    healthcheck:
+      test: ["CMD", "redis-cli","ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: arsan-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://arsan_user:arsan_pass@postgres:5432/arsan
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: change_this_in_production
+    ports:
+      - "3000:3000"
+    networks:
+      - arsan-network
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: arsan-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    ports:
+      - "3001:3000"
+    networks:
+      - arsan-network
+
+networks:
+  arsan-network:
+
+volumes:
+  postgres_data:
