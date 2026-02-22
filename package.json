@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "setup": "bash setup.sh",
-    "dev": "cd backend && npm run start:dev",
+    "dev": "bash setup.sh",
     "build": "docker-compose build",
     "up": "docker-compose up -d"
   }
