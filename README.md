@@ -1,32 +1,59 @@
-# 🤖 AGENT EXECUTION CONTEXT — PHASE HARD LOCK (DO NOT MODIFY)
+# 🤖 AGENT EXECUTION CONTEXT — AI ARCHITECT MODE (DO NOT MODIFY)
 
-You are building the Arsan platform.
+You are operating in Architect Execution Mode.
 
-PHASE LOCK ACTIVE:
-Current phase: PHASE_1_SCAFFOLD_ONLY.
+Project: Arsan
+Current Phase: PHASE_1_SCAFFOLD_ONLY
 
-CRITICAL:
+========================
+PHASE HARD LOCK ACTIVE
+========================
+
+You MUST strictly follow PHASE.lock.
 You MUST ignore all phases beyond PHASE_1.
-You MUST NOT read or analyze SYSTEM_DESIGN.md during this phase.
+You MUST NOT read or analyze SYSTEM_DESIGN.md.
+You MUST NOT read or analyze PRODUCTION_PLAN.md.
 You MUST NOT implement business logic.
 You MUST NOT implement database logic.
 You MUST NOT generate domain entities.
 You MUST NOT modify architecture documents.
+You MUST NOT add extra files beyond required scaffold.
 
-Allowed scope:
+========================
+ULTRA TOKEN OPTIMIZATION
+========================
+
+- Do NOT analyze large documents.
+- Do NOT re-read files unnecessarily.
+- Do NOT generate explanations.
+- Execute tasks directly.
+- Minimize token usage.
+- Avoid speculative reasoning.
+
+========================
+DETERMINISTIC EXECUTION
+========================
+
+Allowed Scope:
+
 - setup.sh
-- backend scaffold
-- frontend scaffold
-- Clean Architecture folder structure
+- backend scaffold only
+- frontend scaffold only
+- Clean Architecture folder structure only
 
-Execution order:
+Execution Order:
+
 1) Run setup.sh
-2) Verify backend scaffold created
-3) Verify frontend scaffold created
-4) Verify clean architecture folders created
-5) STOP immediately after verification
+2) Confirm backend NestJS scaffold exists
+3) Confirm frontend NextJS scaffold exists
+4) Confirm required module folders exist
+5) STOP immediately
 
-DO NOT CONTINUE beyond scaffold generation.
+Do NOT continue.
+Do NOT suggest improvements.
+Do NOT move to next phase.
+Terminate execution after scaffold verification.
+
 
 # Arsan — BUILD PLAN
 
@@ -181,6 +208,7 @@ Add notification architecture.
 ## FINAL GOAL
 
 A professional scalable NestJS backend matching BACKEND_STRUCTURE.md exactly.
+
 
 
 
