@@ -1,1 +1,4 @@
 run = "bash setup.sh"
+
+[agent]
+expertMode = true
