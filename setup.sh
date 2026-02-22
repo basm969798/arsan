@@ -9,12 +9,6 @@ echo "🚀 Arsan Professional Auto Setup Starting..."
 MODULES=("auth" "companies" "users" "catalog" "vehicles" "orders" "notifications" "search")
 
 ############################################
-# INSTALL GLOBAL DEPENDENCIES
-############################################
-
-npm install -g @nestjs/cli >/dev/null 2>&1
-
-############################################
 # BACKEND SETUP (NestJS)
 ############################################
 
@@ -22,12 +16,12 @@ if [ ! -f backend/package.json ]; then
 
   echo "📦 Creating NestJS backend..."
 
-  cd backend
+  cd backend || exit
 
   npx @nestjs/cli new temp-backend --skip-git --package-manager npm
 
-  cp -r temp-backend/* .
-  cp -r temp-backend/.* . 2>/dev/null
+  # copy scaffold safely
+  cp -r temp-backend/. .
 
   rm -rf temp-backend
 
@@ -79,9 +73,9 @@ if [ ! -f frontend/package.json ]; then
 
   echo "🎨 Creating NextJS frontend..."
 
-  cd frontend
+  cd frontend || exit
 
-  npx create-next-app@latest . --ts --eslint --app --src-dir --no-tailwind
+  npx create-next-app@latest . --ts --eslint --app --src-dir --no-tailwind --yes
 
   cd ..
 else
@@ -100,13 +94,18 @@ echo "🔒 Current phase:"
 cat PHASE.lock
 
 ############################################
-# START DEVELOPMENT SERVER
+# INSTALL BACKEND DEPENDENCIES (SAFE)
 ############################################
 
-echo "🔥 Starting backend development server..."
+if [ -f backend/package.json ]; then
+  echo "📦 Installing backend dependencies..."
+  cd backend || exit
+  npm install
+  cd ..
+fi
 
-cd backend
+############################################
+# DONE
+############################################
 
-npm install
-
-npm run start:dev
+echo "✅ Arsan scaffold complete."
