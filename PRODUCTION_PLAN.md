@@ -1,9 +1,9 @@
-# 🚀 Arsan — Production & Scale Plan
+# 🚀 Arsan — Final Production & Scale Plan
 
-This document defines the full production strategy for Arsan.
+This document defines the complete production strategy for Arsan.
 
-This is NOT for early development.
 This plan is activated before public launch.
+It defines operational discipline, not just infrastructure.
 
 ---
 
@@ -14,15 +14,15 @@ Production stack:
 - Ubuntu 22.04 LTS
 - Docker
 - Docker Compose
-- Nginx Proxy Manager (SSL)
+- Nginx Proxy Manager (SSL termination)
 - PostgreSQL
 - Redis
 
-Architecture:
+Architecture Flow:
 
 Internet
    ↓
-Nginx Proxy Manager (SSL termination)
+Nginx Proxy Manager (SSL)
    ↓
 Frontend (NextJS)
    ↓
@@ -30,146 +30,214 @@ Backend API (NestJS)
    ↓
 PostgreSQL + Redis
 
+Golden Rule:
+Database and Redis are NOT publicly exposed.
+
 ---
 
 # 🔐 2️⃣ Security Hardening
 
-## Environment Protection
+## Secrets Management
 
 - All secrets stored in `.env.production`
-- NEVER commit secrets to GitHub
-- Use strong JWT_SECRET (32+ chars random)
-- Disable default database passwords
+- NEVER commit secrets
+- JWT_SECRET ≥ 32 random characters
+- Rotate secrets periodically
 
 ## Container Security
 
 - Use alpine images
-- Do not expose database ports publicly
-- Backend and DB connected only via Docker network
-- Use `restart: unless-stopped`
+- No root user inside containers (future improvement)
+- restart: unless-stopped
+- Database not exposed to public ports
 
 ## API Security
 
-- Enable CORS whitelist
-- Enable Helmet in NestJS
+- Enable Helmet
+- Strict CORS whitelist
+- Global DTO validation
+- Sanitize input
 - Enable rate limiting
-- Validate all DTOs
-- Use class-validator globally
+- Disable detailed error stacks in production
 
 ---
 
-# 📦 3️⃣ CI/CD Strategy
+# ⚙️ 3️⃣ Configuration Strategy
 
-Trigger: Push to main branch
+Use centralized configuration via:
+
+@nestjs/config
+
+Environment separation:
+
+- .env.development
+- .env.staging
+- .env.production
+
+Never hardcode:
+- Secrets
+- Ports
+- Database URLs
+
+---
+
+# 🧾 4️⃣ Error Handling Strategy
+
+Global exception filter required.
+
+Standard error format:
+
+{
+  "error": "ERROR_CODE",
+  "message": "Human readable message",
+  "requestId": "unique-request-id"
+}
+
+Never expose:
+- Stack traces
+- SQL errors
+- Internal system details
+
+---
+
+# ❤️ 5️⃣ Health Check Strategy
+
+Backend must expose:
+
+GET /health
+
+Checks:
+- Database connectivity
+- Redis connectivity
+- Memory threshold
+
+Used for:
+- Docker healthcheck
+- Load balancer validation
+- Monitoring tools
+
+---
+
+# 📦 6️⃣ CI/CD Strategy
+
+Trigger:
+Push to main branch
 
 Pipeline:
 
 1) Install dependencies
-2) Run lint
+2) Lint
 3) Run tests
-4) Build Docker images
-5) Deploy via SSH to server
-6) Restart containers
-
-Tools:
-
-- GitHub Actions
-- Docker registry (optional)
+4) Build Docker image
+5) Deploy via SSH
+6) Restart containers safely
 
 Deployment model:
 
-Blue-Green or Rolling restart via Docker.
+Rolling restart
+OR Blue-Green deployment
+
+Rollback:
+Re-deploy previous Docker image.
 
 ---
 
-# 📊 4️⃣ Monitoring Strategy
+# 📊 7️⃣ Monitoring Strategy
 
-Initial Phase (Lightweight):
+Phase 1 (Lightweight):
 
-- Docker container healthcheck
-- Basic logs inspection
-- Portainer monitoring
+- Docker healthcheck
+- Portainer
+- Manual log inspection
 
-Growth Phase:
+Phase 2 (Growth):
 
 - Prometheus
 - Grafana dashboards
-- Uptime monitoring (external)
+- Uptime monitoring
 
-Metrics to track:
+Track:
 
-- API response time
+- API latency
 - Error rate
-- Memory usage
 - CPU usage
-- Redis memory
+- Memory usage
 - DB connections
+- Redis memory
 
 ---
 
-# 🧾 5️⃣ Logging Strategy
+# 🧾 8️⃣ Logging Strategy
 
-Logging levels:
+Levels:
 
 - ERROR
 - WARN
 - LOG
 - DEBUG (disabled in production)
 
-Rules:
+Log:
 
-- Log all state transitions
-- Log all financial operations
-- Log authentication failures
-- Log multi-tenant context resolution
-
-Store logs:
-
-- Console (Docker logs)
-- Later: Centralized logging system
+- State transitions
+- Financial events
+- Authentication failures
+- Tenant resolution
+- Critical errors
 
 Never log:
 
 - Passwords
-- JWT tokens
+- JWT
 - Secrets
+- Payment data
 
 ---
 
-# ⚡ 6️⃣ Caching Strategy (Redis)
+# ⚡ 9️⃣ Caching Strategy (Redis)
 
-Redis used for:
+Used for:
 
 - Search caching
-- Rate limiting
 - Idempotency keys
-- Session caching
+- Rate limiting
 - Temporary locks
+- Session caching
 
 Rules:
 
-- Cache only read-heavy endpoints
 - Use TTL
-- Never cache financial final states
+- Never cache final financial states
+- Cache read-heavy endpoints only
 
 ---
 
-# 🚦 7️⃣ Rate Limiting
+# 🚦 🔟 Rate Limiting Strategy
 
-Apply rate limiting on:
+Apply to:
 
-- Login endpoints
+- Login
 - Order creation
 - Public APIs
 
-Strategy:
+Initial policy:
 
-- 100 requests / minute per IP (initial)
-- Adjustable later
+100 requests/minute/IP
+
+Adjust after traffic analysis.
 
 ---
 
-# 🗄️ 8️⃣ Database Strategy
+# 🗄️ 1️⃣1️⃣ Database Strategy
+
+## Multi-Tenant Rule
+
+Every core table must include:
+
+company_id (indexed)
+
+Every query must include:
+
+WHERE company_id = currentTenant
 
 ## Indexing Plan
 
@@ -180,31 +248,51 @@ Indexes required for:
 - order_id
 - order_status
 - created_at
+- foreign keys
 - vehicle references
 
-Multi-tenant rule:
+## Migration Discipline
 
-All core tables must include:
-
-company_id (indexed)
-
-## Migrations
-
-Use:
-
-- TypeORM / Prisma migration system
+- Use migrations only
 - Never modify production DB manually
+- Always prepare rollback migration
 
 ---
 
-# 💾 9️⃣ Backup Strategy
+# 🔄 1️⃣2️⃣ API Versioning Strategy
 
-Daily backup:
+All endpoints must use versioning:
 
-- PostgreSQL dump (automated)
-- Store backup outside container
+/api/v1/...
 
-Backup retention:
+Future breaking changes:
+
+/api/v2/...
+
+Never break existing clients.
+
+---
+
+# 🧪 1️⃣3️⃣ Testing Strategy
+
+Required before launch:
+
+- Unit tests
+- Integration tests
+- Multi-tenant isolation tests
+- Order lifecycle tests
+- Authentication tests
+
+---
+
+# 💾 1️⃣4️⃣ Backup Strategy
+
+Daily:
+
+- PostgreSQL dump
+- Stored outside container
+
+Retention:
 
 - 7 daily
 - 4 weekly
@@ -214,101 +302,82 @@ Test restore every 30 days.
 
 ---
 
-# 📈 🔟 Scaling Strategy
+# 📈 1️⃣5️⃣ Scaling Strategy
 
-Initial capacity (2 CPU / 8GB RAM):
+Current capacity:
+2 CPU / 8GB RAM
 
 Supports:
+300–500 active users (moderate load)
 
-- 300–500 active users
-- Moderate search load
-
-Scaling plan:
+Scaling roadmap:
 
 Phase 1:
 - Optimize queries
-- Add indexes
+- Improve indexing
 - Improve caching
 
 Phase 2:
-- Separate database server
 - Increase CPU to 4 cores
+- Separate DB server
 
 Phase 3:
 - Horizontal scaling (multiple backend instances)
-- Add load balancer
+- Load balancer
+- Read replicas
 
 ---
 
-# 🧠 1️⃣1️⃣ Multi-Tenant Isolation Strategy
+# 🧠 1️⃣6️⃣ Feature Flags Strategy
 
-Golden rule:
+Future capability:
 
-Backend enforces tenant isolation at repository level.
+- Enable features per tenant
+- Gradual rollout
+- A/B testing
 
-Never rely on frontend filtering.
-
-Every query must include:
-
-WHERE company_id = currentTenant
-
-Future improvement:
-
-Row Level Security (PostgreSQL)
+Do not deploy unfinished features publicly.
 
 ---
 
-# 🔄 1️⃣2️⃣ Zero Downtime Deployment
+# 🔄 1️⃣7️⃣ Zero Downtime Deployment
 
-Deployment steps:
+Steps:
 
-1) Build new container
+1) Build new image
 2) Run healthcheck
 3) Switch traffic
 4) Stop old container
 
-Rollback plan:
-
-- Keep previous image
-- Re-deploy previous version
+Rollback:
+Keep previous image ready.
 
 ---
 
-# 🧪 1️⃣3️⃣ Testing Strategy
+# 🔥 1️⃣8️⃣ Pre-Launch Checklist
 
-Required before launch:
-
-- Unit tests for core modules
-- Integration tests for Orders
-- Authentication tests
-- Multi-tenant isolation tests
-
----
-
-# 🔥 1️⃣4️⃣ Pre-Launch Checklist
-
-- All environment variables set
 - SSL valid
-- Database backup working
-- Healthcheck endpoint active
+- Secrets configured
+- Healthcheck working
+- Logging level production
 - Rate limiting active
-- Logging level set to production
-- No DEBUG logs
-- No TODO left in code
+- Backup tested
+- No debug logs
+- No TODOs
+- Migrations clean
 
 ---
 
-# 🏁 FINAL PRODUCTION GOAL
+# 🏁 FINAL PRODUCTION PRINCIPLE
 
 Arsan must be:
 
 - Secure
-- Isolated per tenant
-- Resilient
+- Tenant-isolated
+- Observable
 - Recoverable
 - Scalable
-- Observable
 - Maintainable
 
-Production is not a feature.
-Production is architecture discipline.
+Production is discipline.
+Not a feature.
