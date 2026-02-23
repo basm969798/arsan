@@ -2,3 +2,6 @@ run = "bash setup.sh"
 
 [agent]
 expertMode = true
+
+[nix]
+packages = ["nodejs-16_x"]
