@@ -4,10 +4,12 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const PORT = process.env.PORT || 3000;
+  const port = process.env.PORT ?? 0; // ← يخلي النظام يختار بورت فاضي
 
-  await app.listen(PORT, '0.0.0.0');
+  const server = await app.listen(port, '0.0.0.0');
 
-  console.log(`🚀 Server running on port ${PORT}`);
+  const actualPort = server.address()['port'];
+
+  console.log(`🚀 Server running on port ${actualPort}`);
 }
 bootstrap();

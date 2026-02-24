@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { VehiclesController } from './vehicles.controller';
-import { VehiclesService } from './vehicles.service';
+import { VehiclesController } from './api/vehicles.controller';
+import { VehiclesService } from './application/vehicles.service';
 
 @Module({
   controllers: [VehiclesController],

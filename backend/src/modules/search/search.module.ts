@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { SearchController } from './search.controller';
-import { SearchService } from './search.service';
+import { SearchController } from './api/search.controller';
+import { SearchService } from './application/search.service';
 
 @Module({
   controllers: [SearchController],
