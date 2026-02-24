@@ -14,13 +14,12 @@ import { LoginDto } from './dto/login.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // 🔓 LOGIN ROUTE
   @Post('login')
   async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.userId);
+    const user = await this.authService.validateUser(dto.email, dto.password);
+    return this.authService.login(user.id);
   }
 
-  // 🔐 PROTECTED ROUTE
   @UseGuards(JwtAuthGuard)
   @Get('protected')
   getProtected(@Request() req) {
