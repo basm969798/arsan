@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter } from 'events';
 
 @Injectable()
-export class DomainEventBus {
-  publish(event: any): void {
-    console.log('[EventBus] Published event:', event?.eventType);
+export class DomainEventBus extends EventEmitter {
+  publish(eventType: string, payload: any): void {
+    console.log(`[EventBus] Publishing event: ${eventType}`);
+    this.emit(eventType, payload);
   }
 }
