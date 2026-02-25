@@ -4,11 +4,11 @@ import {
   Post,
   Body,
   UseGuards,
-  Request,
 } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthService } from '../application/auth.service';
 import { LoginDto } from './dto/login.dto';
+import { CurrentUser } from './current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -16,13 +16,13 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() dto: LoginDto) {
-    const user = await this.authService.validateUser(dto.email, dto.password);
-    return this.authService.login(user.id);
+    // التصحيح هنا: أضفنا كلمة return لكي تصل البيانات للمستخدم
+    return await this.authService.login(dto.email, dto.password);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('protected')
-  getProtected(@Request() req) {
-    return req.user;
+  getProtected(@CurrentUser() user: any) {
+    return user;
   }
 }

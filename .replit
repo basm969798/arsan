@@ -1,15 +1,23 @@
-run = "bash setup.sh"
+run = "cd backend && npm run start:dev"
 modules = ["nodejs-20"]
+
+[nix]
+packages = ["tree"]
 
 [agent]
 expertMode = true
 
 [[ports]]
+<<<<<<< HEAD
 localPort = 3000
 externalPort = 80
 
 [nix]
 packages = ["tree"]
+=======
+localPort = 8080
+externalPort = 8080
+>>>>>>> 3f8649b (Integrate database and caching, add health check, and refine authentication flow)
 
 [workflows]
 runButton = "Project"
@@ -27,10 +35,10 @@ args = "Backend"
 name = "Backend"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd backend && npx nest start --watch"
-waitForPort = 3000
-
-[workflows.workflow.metadata]
-outputType = "console"
+waitForPort = 8080
