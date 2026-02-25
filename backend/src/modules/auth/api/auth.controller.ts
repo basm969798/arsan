@@ -1,28 +1,42 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import { AuthService } from '../application/auth.service';
-import { LoginDto } from './dto/login.dto';
-import { CurrentUser } from './current-user.decorator';
+import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { LoginDto } from './dtos/login.dto';
+import { RegisterDto } from './dtos/register.dto';
+import { UsersService } from '../../users/application/services/users.service';
+import { CompaniesService } from '../../companies/application/services/companies.service';
+import * as bcrypt from 'bcryptjs';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly companiesService: CompaniesService,
+  ) {}
 
-  @Post('login')
-  async login(@Body() dto: LoginDto) {
-    // التصحيح هنا: أضفنا كلمة return لكي تصل البيانات للمستخدم
-    return await this.authService.login(dto.email, dto.password);
+  @Post('register')
+  async register(@Body() dto: RegisterDto) {
+    const company = await this.companiesService.createCompany(dto.companyName);
+    const user = await this.usersService.createUser(company.id, dto.email, dto.password);
+
+    return {
+      message: 'Registration successful',
+      companyId: company.id,
+      userId: user.id,
+    };
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get('protected')
-  getProtected(@CurrentUser() user: any) {
-    return user;
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() dto: LoginDto) {
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+      return { error: 'Invalid credentials' };
+    }
+
+    return {
+      message: 'Login successful',
+      userId: user.id,
+      companyId: user.companyId,
+      token: 'jwt_placeholder_for_next_step'
+    };
   }
 }
