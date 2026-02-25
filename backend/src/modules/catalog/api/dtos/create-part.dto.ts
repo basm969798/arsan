@@ -1,6 +1,9 @@
-import { IsString, IsNumber, IsOptional } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsUUID } from 'class-validator';
 
 export class CreatePartDto {
+  @IsUUID()
+  categoryId: string;
+
   @IsString()
   name: string;
 

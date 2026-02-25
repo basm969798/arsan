@@ -1,0 +1,132 @@
+# ARCHITECT INSTRUCTION: EXECUTE PHASE 10 (TENANT-AWARE CATALOG LOGIC)
+You are a strict execution agent operating in ULTRA MODE. 
+Your goal is to implement the Catalog logic securely, extracting companyId strictly from the JWT token. Do NOT break compilation.
+
+STEP 1: Execute the following bash script to strictly set up the decorators and catalog logic with CORRECT IMPORTS:
+
+```bash
+cd backend
+
+# 1. Create CurrentUser Decorator
+mkdir -p src/common/decorators
+cat << 'EOF' > src/common/decorators/current-user.decorator.ts
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+
+export const CurrentUser = createParamDecorator(
+  (data: unknown, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.user; // Injected by JwtStrategy
+  },
+);
+EOF
+
+# 2. Create CreateCategory DTO
+cat << 'EOF' > src/modules/catalog/api/dtos/create-category.dto.ts
+import { IsString, IsOptional } from 'class-validator';
+
+export class CreateCategoryDto {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+EOF
+
+# 3. Update CreatePart DTO to include categoryId
+cat << 'EOF' > src/modules/catalog/api/dtos/create-part.dto.ts
+import { IsString, IsNumber, IsOptional, IsUUID } from 'class-validator';
+
+export class CreatePartDto {
+  @IsUUID()
+  categoryId: string;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  oemNumber: string;
+
+  @IsOptional()
+  @IsNumber()
+  basePrice?: number;
+}
+EOF
+
+# 4. Update Catalog Service (Fixed Imports & Tenant Logic)
+cat << 'EOF' > src/modules/catalog/application/services/catalog.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Category } from '../../domain/entities/category.entity';
+import { Part } from '../../domain/entities/part.entity';
+import { CreateCategoryDto } from '../../api/dtos/create-category.dto';
+import { CreatePartDto } from '../../api/dtos/create-part.dto';
+
+@Injectable()
+export class CatalogService {
+  constructor(
+    @InjectRepository(Category)
+    private readonly categoryRepo: Repository<Category>,
+    @InjectRepository(Part)
+    private readonly partRepo: Repository<Part>,
+  ) {}
+
+  async createCategory(companyId: string, dto: CreateCategoryDto): Promise<Category> {
+    const category = this.categoryRepo.create({ ...dto, companyId });
+    return this.categoryRepo.save(category);
+  }
+
+  async createPart(companyId: string, dto: CreatePartDto): Promise<Part> {
+    const category = await this.categoryRepo.findOne({ 
+      where: { id: dto.categoryId, companyId } 
+    });
+    
+    if (!category) {
+      throw new NotFoundException('Category not found or does not belong to your company');
+    }
+
+    const part = this.partRepo.create({ ...dto, companyId });
+    return this.partRepo.save(part);
+  }
+
+  async getCatalog(companyId: string): Promise<Category[]> {
+    return this.categoryRepo.find({ where: { companyId } });
+  }
+}
+EOF
+
+# 5. Update Catalog Controller (Fixed Imports & Guarded)
+cat << 'EOF' > src/modules/catalog/api/controllers/catalog.controller.ts
+import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
+import { CatalogService } from '../../application/services/catalog.service';
+import { CreateCategoryDto } from '../dtos/create-category.dto';
+import { CreatePartDto } from '../dtos/create-part.dto';
+import { JwtAuthGuard } from '../../../auth/infrastructure/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../../common/decorators/current-user.decorator';
+
+@UseGuards(JwtAuthGuard)
+@Controller('catalog')
+export class CatalogController {
+  constructor(private readonly catalogService: CatalogService) {}
+
+  @Post('categories')
+  async createCategory(@CurrentUser() user: any, @Body() dto: CreateCategoryDto) {
+    return this.catalogService.createCategory(user.companyId, dto);
+  }
+
+  @Post('parts')
+  async createPart(@CurrentUser() user: any, @Body() dto: CreatePartDto) {
+    return this.catalogService.createPart(user.companyId, dto);
+  }
+
+  @Get()
+  async getMyCatalog(@CurrentUser() user: any) {
+    return this.catalogService.getCatalog(user.companyId);
+  }
+}
+EOF
+
+# 6. Update PHASE.lock
+echo "PHASE_10_TENANT_AWARE_CATALOG_COMPLETE" > ../PHASE.lock
