@@ -1,0 +1,120 @@
+# ARCHITECT INSTRUCTION: EXECUTE PHASE 5 (CATALOG & VEHICLES DOMAIN)
+You are a strict execution agent operating in ULTRA MODE. Your goal is to execute PHASE 5 exactly as instructed.
+Do NOT write business logic. Create ONLY the skeletons, structures, and wire them to TypeORM so the database synchronizes.
+
+STEP 1: Execute the following bash script to create the entities and update the modules safely:
+
+```bash
+cd backend
+
+# 1. Ensure directories exist
+mkdir -p src/modules/vehicles/domain/entities
+mkdir -p src/modules/catalog/domain/entities
+
+# 2. Create Vehicle Entity Skeleton (Global Dictionary - No Tenant ID needed here)
+cat << 'EOF' > src/modules/vehicles/domain/entities/vehicle.entity.ts
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '../../../../common/database/base.entity';
+
+@Entity('vehicles')
+@Index(['make', 'model'])
+export class Vehicle extends BaseEntity {
+  @Column({ type: 'varchar', length: 100 })
+  make: string; // e.g., Toyota, Kia
+
+  @Column({ type: 'varchar', length: 100 })
+  model: string; // e.g., Camry, Optima
+
+  @Column({ type: 'int' })
+  startYear: number;
+
+  @Column({ type: 'int' })
+  endYear: number;
+}
+EOF
+
+# 3. Create Category Entity Skeleton (Law 9: Tenant Isolation)
+cat << 'EOF' > src/modules/catalog/domain/entities/category.entity.ts
+import { Entity, Column, Index } from 'typeorm';
+import { BaseEntity } from '../../../../common/database/base.entity';
+
+@Entity('categories')
+export class Category extends BaseEntity {
+  @Index('IDX_CATEGORY_COMPANY')
+  @Column({ type: 'uuid' })
+  companyId: string;
+
+  @Column({ type: 'varchar', length: 255 })
+  name: string; // e.g., Engine, Brakes
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+}
+EOF
+
+# 4. Create Part Entity Skeleton (Law 8: Optimistic Concurrency & Law 9: Tenant Isolation)
+cat << 'EOF' > src/modules/catalog/domain/entities/part.entity.ts
+import { Entity, Column, Index, VersionColumn } from 'typeorm';
+import { BaseEntity } from '../../../../common/database/base.entity';
+
+@Entity('parts')
+export class Part extends BaseEntity {
+  @Index('IDX_PART_COMPANY')
+  @Column({ type: 'uuid' })
+  companyId: string;
+
+  @Column({ type: 'uuid' })
+  categoryId: string;
+
+  @Column({ type: 'varchar', length: 255 })
+  name: string;
+
+  @Index('IDX_PART_OEM')
+  @Column({ type: 'varchar', length: 100 })
+  oemNumber: string; // Manufacturer Part Number
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  basePrice: number;
+
+  @VersionColumn()
+  version: number; // Law 8: Optimistic Concurrency
+}
+EOF
+
+# 5. Wire Vehicles Module safely
+cat << 'EOF' > src/modules/vehicles/vehicles.module.ts
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Vehicle } from './domain/entities/vehicle.entity';
+import { VehiclesController } from './api/controllers/vehicles.controller';
+import { VehiclesService } from './application/services/vehicles.service';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([Vehicle])],
+  controllers: [VehiclesController],
+  providers: [VehiclesService],
+  exports: [TypeOrmModule, VehiclesService],
+})
+export class VehiclesModule {}
+EOF
+
+# 6. Wire Catalog Module safely
+cat << 'EOF' > src/modules/catalog/catalog.module.ts
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Category } from './domain/entities/category.entity';
+import { Part } from './domain/entities/part.entity';
+import { CatalogController } from './api/controllers/catalog.controller';
+import { CatalogService } from './application/services/catalog.service';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([Category, Part])],
+  controllers: [CatalogController],
+  providers: [CatalogService],
+  exports: [TypeOrmModule, CatalogService],
+})
+export class CatalogModule {}
+EOF
+
+# 7. Update PHASE.lock
+echo "PHASE_5_CATALOG_VEHICLES_COMPLETE" > ../PHASE.lock
