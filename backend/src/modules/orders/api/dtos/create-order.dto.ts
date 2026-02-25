@@ -1,11 +1,23 @@
-import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsOptional, IsString, IsUUID, IsNumber, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class OrderItemDto {
+  @IsUUID()
+  partId: string;
+
+  @IsNumber()
+  quantity: number;
+}
 
 export class CreateOrderDto {
   @IsUUID()
-  supplierId: string;
+  @IsOptional()
+  supplierId?: string;
 
   @IsArray()
-  items: any[];
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[];
 
   @IsOptional()
   @IsString()

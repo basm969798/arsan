@@ -1,6 +1,7 @@
-import { Entity, Column, Index, VersionColumn } from 'typeorm';
+import { Entity, Column, Index, VersionColumn, OneToMany } from 'typeorm';
 import { BaseEntity } from '../../../../common/database/base.entity';
-import { OrderStatus } from '../enums/order-status.enum';
+import { OrderItem } from './order-item.entity';
+import { Offer } from './offer.entity';
 
 @Entity('orders')
 export class Order extends BaseEntity {
@@ -11,8 +12,14 @@ export class Order extends BaseEntity {
   @Column({ type: 'uuid' })
   createdById: string;
 
-  @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.NEW })
-  status: OrderStatus;
+  @Column({ type: 'varchar', length: 50 })
+  status: string;
+
+  @OneToMany(() => OrderItem, (item) => item.order, { cascade: true })
+  items: OrderItem[];
+
+  @OneToMany(() => Offer, (offer) => offer.order, { cascade: true })
+  offers: Offer[];
 
   @VersionColumn()
   version: number;
