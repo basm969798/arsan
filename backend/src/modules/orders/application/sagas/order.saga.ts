@@ -13,13 +13,18 @@ export class OrderSaga implements OnModuleInit {
 
   onModuleInit() {
     this.eventBus.on('ORDER_CREATED', (payload) => this.handleOrderCreated(payload));
+    this.eventBus.on('ORDER_COMPLETED', (payload) => this.handleOrderCompleted(payload));
     console.log('[OrderSaga] Process Manager Initialized and Listening...');
   }
 
   async handleOrderCreated(payload: any) {
     console.log(`[OrderSaga] Handling ORDER_CREATED for Order: ${payload.orderId}`);
-
     await this.notifications.send(payload.companyId, 'A new order has been created.');
     await this.search.indexPart({ id: payload.orderId, type: 'order' });
+  }
+
+  async handleOrderCompleted(payload: any) {
+    console.log(`[OrderSaga] Handling ORDER_COMPLETED for Order: ${payload.orderId}`);
+    await this.notifications.send(payload.companyId, 'Order picked up successfully. Awaiting financial closing.');
   }
 }

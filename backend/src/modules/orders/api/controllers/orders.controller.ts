@@ -1,6 +1,7 @@
-import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Patch, UseGuards } from '@nestjs/common';
 import { OrdersService } from '../../application/services/orders.service';
 import { CreateOrderDto } from '../dtos/create-order.dto';
+import { PickupOrderDto } from '../dtos/pickup-order.dto';
 import { JwtAuthGuard } from '../../../auth/infrastructure/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../../common/decorators/current-user.decorator';
 
@@ -17,5 +18,10 @@ export class OrdersController {
   @Get()
   async findAll(@CurrentUser() user: any) {
     return this.ordersService.getMyOrders(user.companyId);
+  }
+
+  @Patch(':id/pickup')
+  async pickup(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: PickupOrderDto) {
+    return this.ordersService.confirmPickup(user.companyId, id, dto.verificationCode);
   }
 }

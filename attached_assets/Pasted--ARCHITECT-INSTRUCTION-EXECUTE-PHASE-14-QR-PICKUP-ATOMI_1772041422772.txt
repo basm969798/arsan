@@ -1,0 +1,171 @@
+# ARCHITECT INSTRUCTION: EXECUTE PHASE 14 (QR PICKUP & ATOMIC FULFILLMENT)
+You are a strict execution agent operating in ULTRA MODE. 
+Your goal is to implement the Pickup verification logic, strictly following Rule 4 & 5. Do NOT break compilation.
+
+STEP 1: Execute the following bash script to implement Pickup Logic and update the Saga:
+
+```bash
+cd backend
+
+# 1. Create Pickup DTO
+mkdir -p src/modules/orders/api/dtos
+cat << 'EOF' > src/modules/orders/api/dtos/pickup-order.dto.ts
+import { IsString, IsNotEmpty } from 'class-validator';
+
+export class PickupOrderDto {
+  @IsString()
+  @IsNotEmpty()
+  verificationCode: string;
+}
+EOF
+
+# 2. Update Orders Service with Pickup Logic
+cat << 'EOF' > src/modules/orders/application/services/orders.service.ts
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { Order } from '../../domain/entities/order.entity';
+import { OrderItem } from '../../domain/entities/order-item.entity';
+import { OrderStatus } from '../../domain/enums/order-status.enum';
+import { CreateOrderDto } from '../../api/dtos/create-order.dto';
+import { DomainEventBus } from '../../../../common/events/domain-event.bus';
+
+@Injectable()
+export class OrdersService {
+  constructor(
+    @InjectRepository(Order)
+    private readonly orderRepo: Repository<Order>,
+    private readonly dataSource: DataSource,
+    private readonly eventBus: DomainEventBus,
+  ) {}
+
+  async createOrder(traderCompanyId: string, traderId: string, dto: CreateOrderDto): Promise<Order> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const order = this.orderRepo.create({
+        companyId: traderCompanyId,
+        createdById: traderId,
+        status: OrderStatus.NEW,
+      });
+      const savedOrder = await queryRunner.manager.save(order);
+      if (dto.items && dto.items.length > 0) {
+        const items = dto.items.map(item => queryRunner.manager.create(OrderItem, {
+          orderId: savedOrder.id,
+          partId: item.partId,
+          quantity: item.quantity,
+        }));
+        await queryRunner.manager.save(OrderItem, items);
+      }
+      await queryRunner.commitTransaction();
+      this.eventBus.publish('ORDER_CREATED', { orderId: savedOrder.id, companyId: traderCompanyId });
+      return savedOrder;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async confirmPickup(companyId: string, orderId: string, verificationCode: string): Promise<Order> {
+    const order = await this.orderRepo.findOne({ where: { id: orderId, companyId } });
+    if (!order) throw new NotFoundException('Order not found or access denied');
+    
+    // QR / Verification Code logic
+    if (verificationCode !== 'ARSAN_SAFE_PICKUP') { 
+       throw new BadRequestException('Invalid QR / Verification Code');
+    }
+
+    // Strict State Machine Guard
+    if (order.status !== OrderStatus.READY_FOR_PICKUP && order.status !== OrderStatus.NEW) { 
+      throw new BadRequestException(`Cannot pickup order in current state: ${order.status}`);
+    }
+
+    order.status = OrderStatus.COMPLETED;
+    const updatedOrder = await this.orderRepo.save(order);
+
+    // Law 10 & 11: Emit Event for the Process Manager
+    this.eventBus.publish('ORDER_COMPLETED', { orderId: updatedOrder.id, companyId: updatedOrder.companyId });
+    return updatedOrder;
+  }
+
+  async getMyOrders(companyId: string): Promise<Order[]> {
+    return this.orderRepo.find({ 
+      where: { companyId },
+      relations: ['items', 'offers'],
+      order: { createdAt: 'DESC' }
+    });
+  }
+}
+EOF
+
+# 3. Update Order Saga to listen to ORDER_COMPLETED
+cat << 'EOF' > src/modules/orders/application/sagas/order.saga.ts
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { DomainEventBus } from '../../../../common/events/domain-event.bus';
+import { NotificationsService } from '../../../notifications/application/services/notifications.service';
+import { SearchService } from '../../../search/application/services/search.service';
+
+@Injectable()
+export class OrderSaga implements OnModuleInit {
+  constructor(
+    private readonly eventBus: DomainEventBus,
+    private readonly notifications: NotificationsService,
+    private readonly search: SearchService,
+  ) {}
+
+  onModuleInit() {
+    this.eventBus.on('ORDER_CREATED', (payload) => this.handleOrderCreated(payload));
+    this.eventBus.on('ORDER_COMPLETED', (payload) => this.handleOrderCompleted(payload)); // New Listener
+    console.log('[OrderSaga] 🧠 Process Manager Initialized and Listening...');
+  }
+
+  async handleOrderCreated(payload: any) {
+    console.log(`[OrderSaga] ⚡ Handling ORDER_CREATED for Order: ${payload.orderId}`);
+    await this.notifications.send(payload.companyId, 'A new order has been created.');
+    await this.search.indexPart({ id: payload.orderId, type: 'order' });
+  }
+
+  async handleOrderCompleted(payload: any) {
+    console.log(`[OrderSaga] 🏁 Handling ORDER_COMPLETED for Order: ${payload.orderId}`);
+    // Notify relevant parties that the order is finalized and ready for financial closing
+    await this.notifications.send(payload.companyId, 'Order picked up successfully. Awaiting financial closing.');
+  }
+}
+EOF
+
+# 4. Update Orders Controller with Pickup Endpoint
+cat << 'EOF' > src/modules/orders/api/controllers/orders.controller.ts
+import { Controller, Post, Get, Body, Param, Patch, UseGuards } from '@nestjs/common';
+import { OrdersService } from '../../application/services/orders.service';
+import { CreateOrderDto } from '../dtos/create-order.dto';
+import { PickupOrderDto } from '../dtos/pickup-order.dto';
+import { JwtAuthGuard } from '../../../auth/infrastructure/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../../common/decorators/current-user.decorator';
+
+@UseGuards(JwtAuthGuard)
+@Controller('orders')
+export class OrdersController {
+  constructor(private readonly ordersService: OrdersService) {}
+
+  @Post()
+  async create(@CurrentUser() user: any, @Body() dto: CreateOrderDto) {
+    return this.ordersService.createOrder(user.companyId, user.userId, dto);
+  }
+
+  @Get()
+  async findAll(@CurrentUser() user: any) {
+    return this.ordersService.getMyOrders(user.companyId);
+  }
+
+  @Patch(':id/pickup')
+  async pickup(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: PickupOrderDto) {
+    return this.ordersService.confirmPickup(user.companyId, id, dto.verificationCode);
+  }
+}
+EOF
+
+# 5. Update PHASE.lock
+echo "PHASE_14_PICKUP_LOGIC_COMPLETE" > ../PHASE.lock
