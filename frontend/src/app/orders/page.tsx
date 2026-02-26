@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Package, ChevronLeft, AlertCircle, ShoppingCart } from 'lucide-react';
+import { Package, ChevronLeft, AlertCircle, ShoppingCart, Banknote } from 'lucide-react';
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -9,20 +9,34 @@ export default function OrdersPage() {
   const [error, setError] = useState('');
 
   const fetchOrders = async () => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const { data } = await apiClient.get('/orders');
       setOrders(data);
     } catch (err: any) {
-      setError('فشل في جلب الطلبات. يرجى التأكد من الاتصال بالخادم.');
-      console.error('Failed to fetch orders', err);
+      setError('فشل في جلب الطلبات.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { fetchOrders(); }, []);
+
+  const handleCloseOrder = async (orderId: string) => {
+    if (!confirm('هل أنت متأكد من سداد هذا الطلب نقدا وإغلاقه؟')) return;
+    try {
+      await apiClient.post('/finance/close-order', {
+        orderId,
+        type: 'CASH',
+        amount: 0,
+        note: 'سداد نقدي عبر المنصة'
+      });
+      alert('تم السداد وإغلاق الطلب بنجاح!');
+      fetchOrders();
+    } catch (err) {
+      alert('حدث خطأ أثناء الإغلاق المالي.');
+    }
+  };
 
   const getStatusStyle = (status: string) => {
     switch (status) {
@@ -42,29 +56,23 @@ export default function OrdersPage() {
     <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h1 style={{ color: '#333' }}>إدارة الطلبات</h1>
-        <button
-          onClick={fetchOrders}
-          disabled={loading}
-          style={{ padding: '8px 20px', borderRadius: '8px', border: '1px solid #ddd', background: '#fff', cursor: loading ? 'wait' : 'pointer', fontWeight: 'bold', transition: '0.2s' }}
-        >
-          {loading ? 'جاري التحديث...' : 'تحديث القائمة'}
+        <button onClick={fetchOrders} disabled={loading} style={{ padding: '8px 20px', borderRadius: '8px', border: '1px solid #ddd', background: '#fff', cursor: loading ? 'wait' : 'pointer' }}>
+          {loading ? 'تحديث...' : 'تحديث القائمة'}
         </button>
       </div>
 
       {error && (
         <div style={{ padding: '15px', background: '#f8d7da', color: '#721c24', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <AlertCircle size={20} />
-          <span>{error}</span>
+          <AlertCircle size={20} /><span>{error}</span>
         </div>
       )}
 
       {loading && !error ? (
-        <p style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>جاري تحميل الطلبات...</p>
+        <p style={{ textAlign: 'center', color: '#666' }}>جاري تحميل الطلبات...</p>
       ) : orders.length === 0 && !error ? (
         <div style={{ textAlign: 'center', padding: '4rem 2rem', background: '#fff', borderRadius: '15px', border: '1px dashed #ccc' }}>
           <ShoppingCart size={64} style={{ color: '#eee', marginBottom: '1.5rem' }} />
-          <h3 style={{ color: '#555', marginBottom: '0.5rem' }}>لا توجد طلبات حالية</h3>
-          <p style={{ color: '#999' }}>ابدأ بالبحث في الكتالوج واطلب قطع الغيار لشركتك!</p>
+          <h3 style={{ color: '#555' }}>لا توجد طلبات حالية</h3>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -73,13 +81,13 @@ export default function OrdersPage() {
             const itemsCount = order.items ? order.items.length : 0;
 
             return (
-              <div key={order.id} style={{ background: '#fff', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #eee', cursor: 'pointer', transition: 'transform 0.2s' }}>
+              <div key={order.id} style={{ background: '#fff', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #eee' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px', border: '1px solid #f0f0f0' }}>
+                  <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '12px' }}>
                     <Package size={28} color="#555" />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#222' }}>طلب #{order.id.slice(0, 8).toUpperCase()}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '1.2rem' }}>طلب #{order.id.slice(0, 8).toUpperCase()}</div>
                     <div style={{ fontSize: '0.9rem', color: '#777', marginTop: '4px', display: 'flex', gap: '15px' }}>
                       <span>{new Date(order.createdAt).toLocaleDateString('ar-EG')}</span>
                       <span>{itemsCount} قطع</span>
@@ -87,11 +95,21 @@ export default function OrdersPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <span style={{ padding: '8px 16px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: 'bold', color: status.color, backgroundColor: status.bg, border: `1px solid ${status.color}33` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <span style={{ padding: '6px 16px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: 'bold', color: status.color, backgroundColor: status.bg }}>
                     {status.text}
                   </span>
-                  <ChevronLeft size={24} color="#ccc" />
+
+                  {order.status !== 'COMPLETED' && (
+                    <button
+                      onClick={() => handleCloseOrder(order.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#28a745', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      <Banknote size={16} /> سداد
+                    </button>
+                  )}
+
+                  <ChevronLeft size={24} color="#ccc" style={{ cursor: 'pointer' }} />
                 </div>
               </div>
             );

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Landmark, AlertTriangle, History } from 'lucide-react';
+import { Landmark, AlertTriangle, History, TrendingDown } from 'lucide-react';
 
 export default function FinancePage() {
   const [loading, setLoading] = useState(true);
@@ -8,10 +8,7 @@ export default function FinancePage() {
 
   useEffect(() => {
     const userInfo = localStorage.getItem('user_info');
-    if (userInfo) {
-      const { companyId } = JSON.parse(userInfo);
-      setCompanyId(companyId);
-    }
+    if (userInfo) setCompanyId(JSON.parse(userInfo).companyId);
     setTimeout(() => setLoading(false), 800);
   }, []);
 
@@ -27,31 +24,30 @@ export default function FinancePage() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: '#666' }}>جاري تحميل البيانات المالية...</div>
+        <div style={{ textAlign: 'center', padding: '3rem', color: '#666' }}>جاري تحميل البيانات...</div>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', margin: '2rem 0' }}>
             <div style={{ background: '#fff', padding: '2rem', borderRadius: '15px', border: '1px solid #eee', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.03)' }}>
               <AlertTriangle size={36} color="#dc3545" style={{ marginBottom: '15px' }} />
-              <h3 style={{ margin: 0, color: '#666', fontSize: '1.1rem' }}>إجمالي الديون (أرصدة معلقة)</h3>
-              <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#dc3545', marginTop: '10px' }}>0.00 <span style={{ fontSize: '1.2rem' }}>ر.س</span></div>
+              <h3 style={{ margin: 0, color: '#666' }}>إجمالي الديون المعلقة</h3>
+              <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#dc3545', marginTop: '10px' }}>0.00 <span style={{fontSize:'1.2rem'}}>ر.س</span></div>
             </div>
 
-            <div style={{ background: 'linear-gradient(135deg, #007bff, #0056b3)', padding: '2rem', borderRadius: '15px', color: '#fff', textAlign: 'center', boxShadow: '0 6px 15px rgba(0,123,255,0.2)' }}>
-              <History size={36} style={{ marginBottom: '15px', opacity: 0.9 }} />
-              <h3 style={{ margin: 0, opacity: 0.9, fontSize: '1.1rem' }}>آخر العمليات</h3>
-              <div style={{ fontSize: '1.3rem', marginTop: '15px', fontWeight: 'bold' }}>لا توجد عمليات مسجلة</div>
+            <div style={{ background: 'linear-gradient(135deg, #28a745, #1e7e34)', padding: '2rem', borderRadius: '15px', color: '#fff', textAlign: 'center', boxShadow: '0 6px 15px rgba(40,167,69,0.2)' }}>
+              <TrendingDown size={36} style={{ marginBottom: '15px', opacity: 0.9 }} />
+              <h3 style={{ margin: 0, opacity: 0.9 }}>إجمالي المدفوعات</h3>
+              <div style={{ fontSize: '2.5rem', fontWeight: 'bold', marginTop: '10px' }}>0.00 <span style={{fontSize:'1.2rem'}}>ر.س</span></div>
             </div>
           </div>
 
-          <div style={{ background: '#fff', padding: '2rem', borderRadius: '15px', border: '1px solid #eee', boxShadow: '0 4px 10px rgba(0,0,0,0.02)' }}>
-            <h3 style={{ margin: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px', color: '#333' }}>
-              <Landmark size={24} color="#007bff" /> سجل المدفوعات والإغلاقات
+          <div style={{ background: '#fff', padding: '2rem', borderRadius: '15px', border: '1px solid #eee' }}>
+            <h3 style={{ margin: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <History size={24} color="#007bff" /> سجل العمليات المالية
             </h3>
-            <div style={{ padding: '3rem', background: '#f8f9fa', borderRadius: '10px', textAlign: 'center', border: '1px dashed #ccc' }}>
+            <div style={{ textAlign: 'center', padding: '3rem', background: '#f8f9fa', borderRadius: '10px', border: '1px dashed #ccc' }}>
               <Landmark size={48} color="#ccc" style={{ marginBottom: '1rem' }} />
-              <p style={{ color: '#777', margin: 0, fontSize: '1.1rem' }}>السجل المالي نظيف تماما حاليا.</p>
-              <p style={{ color: '#aaa', fontSize: '0.9rem', marginTop: '10px' }}>سيتم تسجيل عمليات الدفع النقدي أو الآجل هنا تلقائيا عند استلام الطلبات.</p>
+              <p style={{ color: '#777', margin: 0 }}>لا توجد عمليات مالية مسجلة حاليا.</p>
             </div>
           </div>
         </>
