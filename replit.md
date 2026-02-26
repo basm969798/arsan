@@ -6,7 +6,7 @@ Arsan is a B2B multi-tenant SaaS platform for auto parts trading. It connects tr
 
 The project uses a monorepo structure with a **NestJS backend** (API-first, single source of truth) and a **Next.js frontend** (presentation only). The backend follows Clean Architecture with four layers: API, Application, Domain, and Infrastructure. Multi-tenancy is achieved via a shared database with a `company_id` tenant identifier on all tenant-scoped entities.
 
-The project is in early scaffold phase — module structures exist but most contain no business logic yet. Only the Auth module has a working JWT login flow (currently with hardcoded credentials).
+Backend core is complete (Phases 1-17). Frontend has login page and dashboard wired to backend API.
 
 ## User Preferences
 
@@ -17,9 +17,8 @@ Preferred communication style: Simple, everyday language.
 ### Overall Structure
 
 ```
-/backend     — NestJS API server (port 3000)
-/frontend    — Next.js frontend app
-/             — Root package.json with setup scripts
+/backend     — NestJS API server (port 8080)
+/frontend    — Next.js frontend app (port 5000)
 ```
 
 ### Backend Architecture (Clean Architecture)
@@ -30,98 +29,113 @@ Each backend module follows a strict 4-layer structure:
 src/modules/<module>/
   api/              — Controllers, DTOs, Guards (API Layer)
   application/      — Services, Use Cases (Application Layer)
-  domain/           — Entities, Interfaces, Enums (Domain Layer) [not yet created]
-  infrastructure/   — Repositories, external integrations (Infrastructure Layer) [not yet created]
+  domain/           — Entities, Enums (Domain Layer)
+  infrastructure/   — Repositories, Gateways (Infrastructure Layer)
 ```
 
-**Dependency rule**: Dependencies point inward only. `API → Application → Domain`. Infrastructure implements Domain interfaces. Domain must never import Infrastructure or framework-specific code.
+**Dependency rule**: Dependencies point inward only. `API → Application → Domain`. Infrastructure implements Domain interfaces.
 
 ### Modules
 
-Eight domain modules are scaffolded in `backend/src/modules/`:
+Nine domain modules in `backend/src/modules/`:
 
 | Module | Purpose | Status |
 |---|---|---|
-| **auth** | JWT authentication (login, guards, strategy) | Basic working scaffold |
-| **users** | User management | Stub with mock data |
-| **companies** | Multi-tenant company management | Empty scaffold |
-| **catalog** | Parts catalog | Empty scaffold |
-| **vehicles** | Vehicle data | Empty scaffold |
-| **orders** | Order lifecycle (direct + public bid) | Empty scaffold |
-| **notifications** | Notification system | Empty scaffold |
-| **search** | Search functionality | Empty scaffold |
+| **auth** | JWT authentication (register, login, guards, strategy) | Complete |
+| **users** | User management (entity + service) | Complete |
+| **companies** | Multi-tenant company management (entity + service) | Complete |
+| **catalog** | Parts catalog (Category + Part entities, CRUD) | Complete |
+| **vehicles** | Vehicle data | Scaffold |
+| **orders** | Order lifecycle (Order + OrderItem + Offer, pickup, saga) | Complete |
+| **notifications** | Real-time WebSocket notifications + DB persistence | Complete |
+| **search** | Advanced search by name/OEM number | Complete |
+| **finance** | Financial closing (immutable records, CASH/DEBT) | Complete |
+
+### Common Infrastructure
+
+- `common/events/` — `DomainEventBus` (EventEmitter-based, global via `EventsModule`)
+- `common/decorators/` — `@CurrentUser()` decorator
+- `common/database/` — `BaseEntity` (id, createdAt, updatedAt)
+- `common/filters/` — Global exception filter
+- `infrastructure/database/` — TypeORM PostgreSQL connection (`DatabaseModule`)
+- `infrastructure/redis/` — Redis module
 
 ### Authentication & Authorization
 
-- **Authentication**: JWT-based via Passport.js. Token extracted from Bearer header. Strategy in `auth/infrastructure/jwt.strategy.ts`.
-- **Authorization**: Tenant-scoped RBAC (Role-Based Access Control). JWT payload carries `sub` (userId), `companyId`, and `role`. Not yet fully implemented.
-- **Guard**: `JwtAuthGuard` extends Passport's `AuthGuard('jwt')`.
-- **Secret**: Uses `JWT_SECRET` env var, falls back to `'dev-secret'` in development.
+- **Authentication**: JWT-based via Passport.js. Token extracted from Bearer header.
+- **JWT Secret**: `process.env.JWT_SECRET || 'arsan_secret_2026'`
+- **Guard**: `JwtAuthGuard` extends Passport's `AuthGuard('jwt')`
+- **JWT Payload**: `{ sub: userId, companyId, role }`
 
 ### Multi-Tenancy
 
-- Strategy: **Shared database, shared schema, tenant identifier column** (`company_id`).
-- All tenant-owned entities must include `company_id`.
-- All queries must be scoped by tenant.
-- Backend enforces tenant isolation — frontend never makes cross-tenant decisions.
+- Strategy: Shared database, shared schema, `companyId` column on all tenant-scoped entities
+- All queries scoped by tenant via `@CurrentUser()` decorator
+- Backend enforces tenant isolation
 
-### Order System (Business Logic — Not Yet Implemented)
+### Event-Driven Architecture
 
-Two order types:
-1. **Direct Order**: Trader selects supplier → supplier accepts/rejects → price locked on acceptance.
-2. **Public Bid**: Trader posts request → suppliers submit offers → trader picks one → price locked on selection.
+- `DomainEventBus` publishes events: `ORDER_CREATED`, `ORDER_COMPLETED`, `ORDER_FINANCIALLY_CLOSED`
+- `OrderSaga` process manager listens and coordinates NotificationsService + SearchService
+- Notifications are persisted to DB and pushed via WebSocket to company rooms
 
-Order lifecycle: Create → Await response → Accept/Select → Prepare → QR delivery confirmation → Financial closure (cash close).
+### API Routes
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | /auth/register | No | Register user + company |
+| POST | /auth/login | No | Login, returns JWT |
+| POST | /catalog/categories | JWT | Create category |
+| POST | /catalog/parts | JWT | Create part |
+| GET | /catalog | JWT | List catalog |
+| POST | /orders | JWT | Create order |
+| GET | /orders | JWT | List tenant orders |
+| PATCH | /orders/:id/pickup | JWT | Confirm pickup with verification code |
+| GET | /search/parts?query= | JWT | Search parts by name/OEM |
+| POST | /finance/close-order | JWT | Financial closing (CASH/DEBT) |
 
 ### Frontend Architecture
 
 - Next.js 16 with App Router (`frontend/src/app/`)
 - TypeScript, React 19
-- Currently default Next.js scaffold — no business UI implemented yet
-- Will consume backend API exclusively — no business logic in frontend
+- `axios` for API calls via `src/lib/api-client.ts` (auto-attaches JWT from localStorage)
+- Pages: `/login` (auth form), `/` (dashboard with auth guard)
+- RTL Arabic layout
 
 ### Running the Project
 
-- **Backend**: `cd backend && npm install && npm run start:dev` (runs on port 3000, or `PORT` env var)
-- **Frontend**: `cd frontend && npm install && npm run dev` (runs on port 3000 by default — will need different port)
-- **Root scripts**: `npm run dev` runs `setup.sh` (bash script, may not exist yet)
-
-**Important**: Backend and frontend both default to port 3000. When running together, set different ports (e.g., backend on 3001 or frontend on 3001).
+- **Backend**: `cd backend && npx nest start --watch` (port 8080)
+- **Frontend**: `cd frontend && npm run dev -- -p 5000` (port 5000)
+- Backend workflow: "Backend" (console, port 8080)
+- Frontend workflow: "Frontend" (webview, port 5000)
 
 ### Database
 
-- **Target**: PostgreSQL (not yet connected — no ORM/database driver installed)
-- **Cache**: Redis (planned, not yet integrated)
-- Neither database nor Redis has been set up yet. When adding database support, use PostgreSQL with an ORM (TypeORM or Drizzle — not yet decided in codebase).
+- **PostgreSQL**: Connected via TypeORM (`synchronize: true` in dev)
+- **Redis**: Module exists, planned for caching
+- **Entities**: User, Company, Category, Part, Order, OrderItem, Offer, FinancialRecord, Notification
 
 ## External Dependencies
 
-### Backend (`backend/package.json`)
+### Backend
 
 | Package | Purpose |
 |---|---|
 | `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express` | NestJS framework |
-| `@nestjs/jwt` | JWT token generation/verification |
-| `@nestjs/passport`, `passport`, `passport-jwt` | Authentication strategy |
-| `class-validator`, `class-transformer` | DTO validation and transformation |
-| `reflect-metadata` | Decorator metadata (required by NestJS) |
-| `rxjs` | Reactive extensions (NestJS dependency) |
+| `@nestjs/jwt`, `@nestjs/passport`, `passport`, `passport-jwt` | JWT authentication |
+| `@nestjs/typeorm`, `typeorm`, `pg` | PostgreSQL ORM |
+| `@nestjs/websockets`, `@nestjs/platform-socket.io`, `socket.io` | WebSocket real-time |
+| `class-validator`, `class-transformer` | DTO validation |
+| `bcrypt` | Password hashing |
 
-### Frontend (`frontend/package.json`)
+### Frontend
 
 | Package | Purpose |
 |---|---|
 | `next` (16.x) | React framework |
 | `react`, `react-dom` (19.x) | UI library |
+| `axios` | HTTP client for API calls |
 
-### Not Yet Added (Planned)
+## Phase Progress
 
-- **PostgreSQL driver** (e.g., `pg`, `typeorm`, or `drizzle-orm` + `drizzle-kit`) — needed for database
-- **Redis client** (e.g., `ioredis` or `@nestjs/cache-manager`) — needed for caching
-- **bcrypt** — listed in root `package.json` but not in backend's `package.json`; needed for password hashing
-
-### Infrastructure (Production)
-
-- Docker + Docker Compose for containerization
-- Nginx Proxy Manager for SSL termination and routing
-- PostgreSQL and Redis containers (not publicly exposed)
+All 17 backend phases complete. PHASE.lock: `PHASE_17_REALTIME_NOTIFICATIONS_COMPLETE` + `PROJECT_BACKEND_CORE_COMPLETED`. Frontend login + dashboard wired.
