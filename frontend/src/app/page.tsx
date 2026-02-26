@@ -1,32 +1,105 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/api-client';
+import { TrendingUp, Package, FolderTree, Activity, ArrowRight, Zap } from 'lucide-react';
+import Link from 'next/link';
 
-export default function Dashboard() {
-  const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+export default function DashboardPage() {
+  const [companyId, setCompanyId] = useState('');
+  const [stats, setStats] = useState({ activeOrdersCount: 0, catalogCount: 0 });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
     const userInfo = localStorage.getItem('user_info');
+    if (userInfo) setCompanyId(JSON.parse(userInfo).companyId);
 
-    if (!token || !userInfo) {
-      return router.push('/login');
-    }
+    const fetchStats = async () => {
+      try {
+        const [ordersRes, catalogRes] = await Promise.all([
+          apiClient.get('/orders').catch(() => ({ data: [] })),
+          apiClient.get('/catalog').catch(() => ({ data: [] }))
+        ]);
 
-    setUser(JSON.parse(userInfo));
-  }, [router]);
+        const activeOrders = (ordersRes.data || []).filter(
+          (order: any) => !['COMPLETED', 'REJECTED', 'CANCELLED'].includes(order.status)
+        );
 
-  if (!user) return <p style={{ padding: '2rem', textAlign: 'center' }}>جاري التحقق...</p>;
+        setStats({
+          activeOrdersCount: activeOrders.length,
+          catalogCount: catalogRes.data.length || 0
+        });
+      } catch (error) {
+        console.error('Failed to load stats', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   return (
-    <div style={{ padding: '3rem', textAlign: 'center' }}>
-      <h1>مرحبا بك في أرسان</h1>
-      <p>معرف شركتك الموثق (Tenant ID): <br/><strong>{user.companyId}</strong></p>
-      <p>حسابك: <strong>{user.email}</strong></p>
-      <button onClick={() => { localStorage.clear(); router.push('/login'); }} style={{ marginTop: '2rem', padding: '10px 20px', color: '#fff', backgroundColor: '#dc3545', cursor: 'pointer', border: 'none', borderRadius: '6px' }}>
-        تسجيل الخروج
-      </button>
+    <div style={{ padding: '2rem', maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
+        <div>
+          <h1 style={{ color: '#111', marginBottom: '0.5rem' }}>مرحبا بك في أرسان</h1>
+          <p style={{ color: '#666', margin: 0 }}>لوحة التحكم والملخص الإحصائي لشركتك</p>
+        </div>
+        {companyId && (
+          <div style={{ background: '#e0f2fe', color: '#0369a1', padding: '8px 15px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <Activity size={18} />
+            متصل: {companyId.split('-')[0]}
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '3rem', color: '#666' }}>جاري تحميل الإحصائيات...</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '3rem' }}>
+
+            <div style={{ background: 'linear-gradient(135deg, #007bff, #0056b3)', color: '#fff', padding: '2rem', borderRadius: '16px', boxShadow: '0 8px 20px rgba(0,123,255,0.2)', position: 'relative', overflow: 'hidden' }}>
+              <Package size={100} style={{ position: 'absolute', left: '-20px', bottom: '-20px', opacity: 0.1 }} />
+              <h3 style={{ margin: 0, opacity: 0.9, fontSize: '1.1rem' }}>الطلبات النشطة (قيد المعالجة)</h3>
+              <div style={{ fontSize: '3rem', fontWeight: 'bold', marginTop: '10px' }}>{stats.activeOrdersCount}</div>
+            </div>
+
+            <div style={{ background: '#fff', padding: '2rem', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #eee', position: 'relative' }}>
+              <FolderTree size={40} color="#28a745" style={{ marginBottom: '15px' }} />
+              <h3 style={{ margin: 0, color: '#555', fontSize: '1.1rem' }}>أقسام الكتالوج</h3>
+              <div style={{ fontSize: '3rem', fontWeight: 'bold', color: '#222', marginTop: '10px' }}>{stats.catalogCount}</div>
+            </div>
+
+            <div style={{ background: '#fff', padding: '2rem', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #eee', position: 'relative' }}>
+              <TrendingUp size={40} color="#ffc107" style={{ marginBottom: '15px' }} />
+              <h3 style={{ margin: 0, color: '#555', fontSize: '1.1rem' }}>كفاءة النظام</h3>
+              <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#222', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                100% <span style={{ fontSize: '1rem', color: '#28a745', background: '#e6f4ea', padding: '4px 8px', borderRadius: '6px' }}>ممتاز</span>
+              </div>
+            </div>
+
+          </div>
+
+          <h2 style={{ color: '#333', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Zap size={24} color="#fd7e14" /> إجراءات سريعة
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+            <Link href="/search" style={{ background: '#fff', padding: '1.5rem', borderRadius: '12px', border: '1px solid #eee', textDecoration: 'none', color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s', boxShadow: '0 2px 5px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>البحث عن قطع غيار</div>
+              <ArrowRight size={20} color="#007bff" />
+            </Link>
+            <Link href="/catalog" style={{ background: '#fff', padding: '1.5rem', borderRadius: '12px', border: '1px solid #eee', textDecoration: 'none', color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s', boxShadow: '0 2px 5px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>إضافة منتج للكتالوج</div>
+              <ArrowRight size={20} color="#28a745" />
+            </Link>
+            <Link href="/finance" style={{ background: '#fff', padding: '1.5rem', borderRadius: '12px', border: '1px solid #eee', textDecoration: 'none', color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s', boxShadow: '0 2px 5px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>مراجعة المركز المالي</div>
+              <ArrowRight size={20} color="#dc3545" />
+            </Link>
+          </div>
+        </>
+      )}
     </div>
   );
 }
