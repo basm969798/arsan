@@ -1,0 +1,41 @@
+cd frontend
+
+echo "============================================="
+echo "🚀 بدء الفحص المعماري الشامل للفرونت اند..."
+echo "============================================="
+
+# 1. فحص المكونات الأساسية
+echo -e "\n--- 🏗️ STEP 1: COMPONENT INTEGRITY ---"
+test -f src/components/Sidebar.tsx && echo "✅ Sidebar Component: FOUND" || echo "❌ Sidebar Component: MISSING"
+test -f src/lib/api-client.ts && echo "✅ API Client Service: FOUND" || echo "❌ API Client Service: MISSING"
+test -f src/lib/socket-service.ts && echo "✅ Socket Service: FOUND" || echo "❌ Socket Service: MISSING"
+
+# 2. فحص المكتبات في package.json
+echo -e "\n--- 📦 STEP 2: DEPENDENCIES CHECK ---"
+grep "react-hot-toast" package.json > /dev/null && echo "✅ react-hot-toast: INSTALLED" || echo "❌ react-hot-toast: MISSING"
+grep "socket.io-client" package.json > /dev/null && echo "✅ socket.io-client: INSTALLED" || echo "❌ socket.io-client: MISSING"
+grep "lucide-react" package.json > /dev/null && echo "✅ lucide-react: INSTALLED" || echo "❌ lucide-react: MISSING"
+
+# 3. فحص التوجيه الآمن (Auth Guards) وحماية الصفحات
+echo -e "\n--- 🛡️ STEP 3: ROUTING & AUTH GUARDS ---"
+grep -r "localStorage.getItem('access_token')" src/app/layout.tsx > /dev/null && echo "✅ Global Auth Check in Layout: FOUND" || echo "❌ Global Auth Check: MISSING"
+grep -r "router.push('/login')" src/app > /dev/null && echo "✅ Unauthenticated Redirect Logic: FOUND" || echo "❌ Redirect Logic: MISSING"
+
+# 4. فحص قانون "عزل المستأجر" (Tenant Isolation)
+echo -e "\n--- 🏢 STEP 4: TENANT ISOLATION (LAW 9) ---"
+echo "🔍 Searching for companyId retrieval in views:"
+grep -r "JSON.parse(.*user_info.*).companyId" src/app | awk -F':' '{print "   ✅ Found in: " $1}'
+
+# 5. فحص معالجة الأخطاء (Error Handling)
+echo -e "\n--- ⚠️ STEP 5: UI ERROR HANDLING ---"
+ERROR_COUNT=$(grep -r "\.catch(" src/app/ | wc -l)
+TRY_CATCH_COUNT=$(grep -r "catch (err" src/app/ | wc -l)
+TOTAL_ERRORS=$((ERROR_COUNT + TRY_CATCH_COUNT))
+echo "✅ Found $TOTAL_ERRORS API Error Catch blocks protecting the UI."
+
+# 6. فحص رابط الباك اند (API Connection)
+echo -e "\n--- 🔌 STEP 6: API CONNECTION CHECK ---"
+grep -r "baseURL:" src/lib/api-client.ts | awk '{$1=$1;print "   🔗 API Base URL Configured as: " $0}'
+
+echo -e "\n============================================="
+echo "✅ انتهى الفحص!"
