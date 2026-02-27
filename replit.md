@@ -49,7 +49,8 @@ Nine domain modules in `backend/src/modules/`:
 | **orders** | Order lifecycle (Order + OrderItem + Offer, pickup, saga) | Complete |
 | **notifications** | Real-time WebSocket notifications + DB persistence | Complete |
 | **search** | Advanced search by name/OEM number | Complete |
-| **finance** | Financial closing (immutable records, CASH/DEBT) | Complete |
+| **finance** | Financial closing (immutable records, CASH/DEBT), ledger, ownership | Complete |
+| **marketplace** | Public bids and supplier offers | Scaffold |
 
 ### Common Infrastructure
 
@@ -113,7 +114,7 @@ Nine domain modules in `backend/src/modules/`:
 
 - **PostgreSQL**: Connected via TypeORM (`synchronize: true` in dev)
 - **Redis**: Module exists, planned for caching
-- **Entities**: User, Company, Category, Part, Order, OrderItem, Offer, FinancialRecord, Notification
+- **Entities**: User, Company, Category, Part, TechnicalPart, SupplierInventory, Order, OrderItem, Offer, OrderEvent, FinancialRecord, FinancialLedger, PartOwnership, Notification, PublicBid, BidOffer
 
 ## External Dependencies
 

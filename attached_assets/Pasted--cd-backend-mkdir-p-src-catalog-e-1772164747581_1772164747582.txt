@@ -1,0 +1,271 @@
+# الانتقال لمجلد الباك اند
+cd backend
+
+# إنشاء المجلدات إذا لم تكن موجودة
+mkdir -p src/catalog/entities
+mkdir -p src/orders/entities
+mkdir -p src/finance/entities
+mkdir -p src/marketplace/entities
+
+# 1. إنشاء جدول القطع التقنية (TechnicalPart)
+cat << 'EOF' > src/catalog/entities/technical-part.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { SupplierInventory } from './supplier-inventory.entity';
+
+export enum PartStatus { PENDING = 'PENDING', APPROVED = 'APPROVED', REJECTED = 'REJECTED' }
+
+@Entity('technical_parts')
+export class TechnicalPart {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  partNumber: string;
+
+  @Column()
+  name: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  compatibleVehicles: any;
+
+  @Column({ type: 'enum', enum: PartStatus, default: PartStatus.PENDING })
+  status: PartStatus;
+
+  @OneToMany(() => SupplierInventory, inventory => inventory.technicalPart)
+  inventories: SupplierInventory[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+EOF
+
+# 2. إنشاء جدول مخزون الموردين (SupplierInventory)
+cat << 'EOF' > src/catalog/entities/supplier-inventory.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { TechnicalPart } from './technical-part.entity';
+
+@Entity('supplier_inventories')
+export class SupplierInventory {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  supplierId: string;
+
+  @ManyToOne(() => TechnicalPart, part => part.inventories, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'technicalPartId' })
+  technicalPart: TechnicalPart;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  price: number;
+
+  @Column({ type: 'int', default: 0 })
+  quantity: number;
+
+  @Column({ default: true })
+  isAvailable: boolean;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+EOF
+
+# 3. إنشاء جدول الطلبات المحدث (Order) مع Optimistic Locking
+cat << 'EOF' > src/orders/entities/order.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, VersionColumn } from 'typeorm';
+
+export enum OrderType { DIRECT = 'DIRECT', PUBLIC = 'PUBLIC' }
+export enum OrderStatus { NEW = 'NEW', PENDING_SUPPLIER = 'PENDING_SUPPLIER', ACCEPTED = 'ACCEPTED', PROCESSING = 'PROCESSING', READY = 'READY', COMPLETED = 'COMPLETED', CANCELLED = 'CANCELLED', REJECTED = 'REJECTED' }
+
+@Entity('orders')
+export class Order {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'enum', enum: OrderType, default: OrderType.DIRECT })
+  type: OrderType;
+
+  @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.NEW })
+  status: OrderStatus;
+
+  @Column()
+  buyerId: string;
+
+  @Column({ nullable: true })
+  supplierId: string;
+
+  @Column({ type: 'int' })
+  quantity: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  priceAtAcceptance: number;
+
+  @Column({ unique: true, nullable: true })
+  idempotencyKey: string;
+
+  @VersionColumn()
+  version: number;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+EOF
+
+# 4. إنشاء جدول سجل حالات الطلب (OrderEvent)
+cat << 'EOF' > src/orders/entities/order-event.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Order } from './order.entity';
+
+@Entity('order_events')
+export class OrderEvent {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => Order, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'orderId' })
+  order: Order;
+
+  @Column({ nullable: true })
+  previousState: string;
+
+  @Column()
+  newState: string;
+
+  @Column()
+  actionByUserId: string;
+
+  @CreateDateColumn()
+  timestamp: Date;
+}
+EOF
+
+# 5. إنشاء السجل المالي المنيع (FinancialLedger)
+cat << 'EOF' > src/finance/entities/financial-ledger.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+
+export enum LedgerEventType { DEBT_CREATED = 'DEBT_CREATED', PAYMENT_MADE = 'PAYMENT_MADE', SETTLED = 'SETTLED' }
+
+@Entity('financial_ledger')
+export class FinancialLedger {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'enum', enum: LedgerEventType })
+  eventType: LedgerEventType;
+
+  @Column({ nullable: true })
+  orderId: string;
+
+  @Column()
+  debtorId: string;
+
+  @Column()
+  creditorId: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  amount: number;
+
+  @CreateDateColumn()
+  timestamp: Date;
+}
+EOF
+
+# 6. إنشاء جدول الملكية (PartOwnership)
+cat << 'EOF' > src/finance/entities/part-ownership.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+@Entity('part_ownerships')
+export class PartOwnership {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  ownerId: string;
+
+  @Column()
+  technicalPartId: string;
+
+  @Column({ type: 'int', default: 0 })
+  quantity: number;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+EOF
+
+# 7. إنشاء جدول النشر العام (PublicBid)
+cat << 'EOF' > src/marketplace/entities/public-bid.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { BidOffer } from './bid-offer.entity';
+
+export enum BidStatus { OPEN = 'OPEN', CLOSED = 'CLOSED' }
+
+@Entity('public_bids')
+export class PublicBid {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  traderId: string;
+
+  @Column()
+  technicalPartId: string;
+
+  @Column({ type: 'enum', enum: BidStatus, default: BidStatus.OPEN })
+  status: BidStatus;
+
+  @OneToMany(() => BidOffer, offer => offer.publicBid)
+  offers: BidOffer[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+EOF
+
+# 8. إنشاء جدول عروض الموردين (BidOffer)
+cat << 'EOF' > src/marketplace/entities/bid-offer.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { PublicBid } from './public-bid.entity';
+
+@Entity('bid_offers')
+export class BidOffer {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => PublicBid, bid => bid.offers, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'publicBidId' })
+  publicBid: PublicBid;
+
+  @Column()
+  supplierId: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  offeredPrice: number;
+
+  @Column({ default: false })
+  isAccepted: boolean;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+EOF
+
+echo "✅ تم بناء الأساس الخرساني لقاعدة البيانات بنجاح!"

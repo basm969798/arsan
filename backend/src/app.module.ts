@@ -16,6 +16,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SearchModule } from './modules/search/search.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { FinanceModule } from './modules/finance/finance.module';
     NotificationsModule,
     SearchModule,
     FinanceModule,
+    MarketplaceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
