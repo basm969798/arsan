@@ -1,281 +1,318 @@
-# Arsan — Official Financial Model (Final)
+# SYSTEM_FINANCIAL_MODEL.md
+Authoritative Financial Model (Architecture-Frozen)
 
-## 1. Purpose
+------------------------------------------------------------
 
-This document defines the authoritative Financial Model for Arsan.
+1. PURPOSE
+
+This document defines the authoritative Financial Model.
 
 It governs:
 
-- Price locking rules
+- Price locking
 - Financial lifecycle
 - Debt handling
 - Partial payments
 - Ownership financial transfers
 - Financial immutability
-- Event-based financial integrity
-- Multi-tenant isolation for financial data
+- Ledger derivation rules
+- Multi-tenant isolation
 
-Financial data is critical and immutable.
-Any violation is considered a critical system failure.
+If conflict exists:
+SYSTEM_INVARIANTS.md prevails.
 
----
+Financial integrity is non-negotiable.
 
-## 2. Core Financial Principles
+------------------------------------------------------------
+
+2. CORE FINANCIAL PRINCIPLES
 
 1. Financial records are immutable.
 2. Financial records are append-only.
-3. No financial UPDATE operations allowed.
-4. No financial DELETE operations allowed.
-5. All financial state must be derived from events.
-6. Price must be locked before financial phase.
-7. Debt must close only when balance reaches zero.
-8. Financial actions must be atomic.
+3. UPDATE operations are forbidden.
+4. DELETE operations are forbidden.
+5. All financial state is derived from ledger events.
+6. No derived balance is stored as source of truth.
+7. Price must be locked before financial phase.
+8. Financial operations must be atomic.
 9. All financial records are tenant-scoped.
+10. Cross-aggregate mutation is forbidden.
 
----
+------------------------------------------------------------
 
-## 3. Price Locking Model
+3. PRICE LOCKING MODEL
 
 Price locking occurs when:
 
-- Supplier accepts a DIRECT order
+- ORDER_ACCEPTED (Direct Order)
 OR
-- Trader selects an offer in PUBLIC order
+- OFFER_SELECTED (Public Order)
 
-At this moment:
+At that moment:
 
-- orders.locked_price is set
-- order_items.price_snapshot is frozen
-- Price becomes immutable
+- orders.locked_price is set.
+- order_items.price_snapshot is frozen.
+- Price becomes permanently immutable.
 
-After locking:
+After price locking:
 
-- Supplier inventory price changes do NOT affect order
-- No recalculation allowed
-- No discount mutation allowed
+- Supplier inventory changes do NOT affect order.
+- locked_price MUST NOT be updated.
+- Historical totals MUST NOT be recalculated.
+- Discounts require explicit financial events (no mutation).
 
----
+------------------------------------------------------------
 
-## 4. Financial Lifecycle
+4. FINANCIAL PHASE ENTRY
 
 Financial phase begins ONLY after:
 
 ORDER_RECEIVED event.
 
-Flow:
+Before ORDER_RECEIVED:
 
-1. Pickup completed
-2. Order status → RECEIVED
-3. Financial closing required
-4. Trader chooses:
-   - CASH
-   - DEBT
+- FINANCIAL_DEBT_REGISTERED forbidden.
+- FINANCIAL_CASH_REGISTERED forbidden.
+- FINANCIAL_PAYMENT_REGISTERED forbidden.
 
-Order cannot reach COMPLETED without financial resolution.
+Financial lifecycle is strictly post-pickup.
 
----
+------------------------------------------------------------
 
-## 5. Financial Events Storage
+5. FINANCIAL LEDGER STRUCTURE
 
-Financial records are stored in:
-
-Table: financial_events
+Table: financial_events (Append-Only Ledger)
 
 Fields:
 
 - id (UUID, PK)
-- company_id (UUID)
-- order_id (UUID)
+- company_id (UUID NOT NULL)
+- order_id (UUID NOT NULL)
 - event_type (CASH | DEBT | PAYMENT | TRANSFER)
-- amount (numeric)
-- balance_after (numeric)
-- created_at (timestamp)
+- amount (numeric NOT NULL)
+- currency (ISO code)
+- created_at (UTC)
 - metadata (JSONB)
 
 Rules:
 
-- Append-only
-- No update
-- No delete
-- Deterministic balance_after
+- Append-only.
+- No UPDATE.
+- No DELETE.
+- No balance column stored.
+- No derived totals stored.
+- All balances computed from SUM(events).
 
 Indexes:
 
 - INDEX(company_id)
 - INDEX(order_id)
 
----
+------------------------------------------------------------
 
-## 6. Cash Closing
+6. LEDGER SEMANTICS
 
-When method = CASH:
+Event meaning:
 
-- One financial event created:
-  FINANCIAL_CASH_REGISTERED
-- balance_after = 0
-- Order status → COMPLETED
+DEBT:
+- Increases outstanding balance by amount.
 
-No further financial events allowed.
+PAYMENT:
+- Decreases outstanding balance by amount.
 
----
+CASH:
+- Equivalent to full immediate settlement.
+- Outstanding balance becomes zero via single ledger event.
 
-## 7. Debt Model
+TRANSFER:
+- Reassigns receivable ownership between companies.
+- Does NOT alter outstanding balance.
+- Does NOT modify historical events.
 
-When method = DEBT:
+Outstanding balance formula (deterministic):
 
-- One financial event created:
-  FINANCIAL_DEBT_REGISTERED
-- balance_after = locked_price
+Outstanding =
+SUM(DEBT)
+- SUM(PAYMENT)
+- SUM(CASH)
 
-Order remains open.
+TRANSFER does not affect balance.
 
-Debt remains active until balance_after = 0.
+Balance MUST NEVER be negative.
+Overpayment is forbidden.
 
----
+------------------------------------------------------------
 
-## 8. Partial Payments
+7. CASH CLOSING
+
+When trader selects CASH:
+
+- Emit FINANCIAL_CASH_REGISTERED.
+- Amount must equal locked_price.
+- Outstanding balance becomes zero.
+- Emit FINANCIAL_BALANCE_ZERO.
+
+Process Manager listens to FINANCIAL_BALANCE_ZERO
+→ Emits ORDER_COMPLETED.
+
+Financial domain MUST NOT directly emit ORDER_COMPLETED.
+
+------------------------------------------------------------
+
+8. DEBT MODEL
+
+When trader selects DEBT:
+
+- Emit FINANCIAL_DEBT_REGISTERED.
+- Amount must equal locked_price.
+- Outstanding balance becomes locked_price.
+
+Order remains RECEIVED until balance = 0.
+
+Debt closes only when:
+
+Outstanding balance = 0
+→ Emit FINANCIAL_BALANCE_ZERO
+→ Process Manager emits ORDER_COMPLETED.
+
+------------------------------------------------------------
+
+9. PARTIAL PAYMENTS
 
 Each payment:
 
-- Creates FINANCIAL_PAYMENT_REGISTERED event
-- Decreases balance
-- Must not exceed outstanding balance
+- Emits FINANCIAL_PAYMENT_REGISTERED.
+- Must not exceed outstanding balance.
+- Must be atomic.
+- Must be idempotent.
 
 Rules:
 
-- balance_after >= 0
-- Overpayment forbidden
-- If balance_after = 0 → ORDER_COMPLETED event emitted
+- amount > 0
+- amount ≤ outstanding balance
+- After payment, recompute outstanding deterministically.
+- If outstanding = 0 → emit FINANCIAL_BALANCE_ZERO.
 
-Each payment is independent and immutable.
+Each payment is immutable and independent.
 
----
+------------------------------------------------------------
 
-## 9. Financial Completion Rules
+10. FINANCIAL COMPLETION RULES
 
-Order becomes COMPLETED only when:
+Order reaches COMPLETED only when:
 
-- CASH payment recorded
-OR
-- Debt fully settled
+- FINANCIAL_BALANCE_ZERO emitted
+AND
+- Process Manager emits ORDER_COMPLETED.
 
-After COMPLETED:
+After ORDER_COMPLETED:
 
-- No further financial events allowed
-- No cancellation allowed
-- No ownership transfer allowed
+- No further financial events allowed.
+- No cancellation allowed.
+- No ownership transfer allowed.
+- Lifecycle becomes immutable.
 
-Final state is immutable.
+------------------------------------------------------------
 
----
-
-## 10. Ownership Transfer Financial Impact
+11. OWNERSHIP TRANSFER FINANCIAL IMPACT
 
 Ownership transfer requires:
 
-1. OWNERSHIP_TRANSFER_ACCEPTED event
-2. FINANCIAL_TRANSFER_REGISTERED event
-3. Update order.owner_company_id
+1. OWNERSHIP_TRANSFER_ACCEPTED event.
+2. FINANCIAL_TRANSFER_REGISTERED event.
+3. owner_company_id projection update.
 
-Transfer must:
+TRANSFER rules:
 
-- Execute atomically
-- Preserve financial integrity
-- Not modify historical financial events
+- Does NOT change outstanding balance.
+- Does NOT modify previous ledger entries.
+- Must execute atomically.
+- Must preserve tenant isolation.
 
-Transfer event records financial movement between companies.
+Cross-aggregate mutation handled ONLY via Process Manager.
 
----
+------------------------------------------------------------
 
-## 11. Multi-Tenant Financial Isolation
+12. MULTI-TENANT FINANCIAL ISOLATION
 
-Every financial_event must include:
+Every financial_event MUST include:
 
 company_id
 
 Rules:
 
-- No cross-tenant financial visibility
-- Queries must filter by company_id
-- No shared financial aggregates across tenants
+- Queries MUST filter by company_id.
+- No cross-tenant financial visibility.
+- No shared aggregates across tenants.
+- Transfer must respect tenant boundaries.
 
-Isolation is mandatory.
+Isolation violations are critical security failures.
 
----
+------------------------------------------------------------
 
-## 12. Concurrency & Atomicity
+13. CONCURRENCY & IDEMPOTENCY
 
-Financial operations must:
+Financial operations MUST:
 
-- Execute inside database transactions
-- Use optimistic locking on orders
-- Prevent double processing via idempotency keys
+- Execute inside DB transaction.
+- Use optimistic locking on orders.
+- Use persistent idempotency table.
+- Prevent duplicate event emission.
 
-Critical operations requiring idempotency:
+Critical idempotent operations:
 
-- Pickup
-- Financial closing
+- Cash closing
+- Debt registration
 - Payment
-- Ownership transfer acceptance
+- Ownership acceptance
 
 Duplicate financial events are forbidden.
 
----
+------------------------------------------------------------
 
-## 13. Derived Financial State
+14. DETERMINISTIC DERIVATION
 
-Financial balance must be computed from:
+Financial state MUST be derived from:
 
-financial_events ordered by created_at or version.
+financial_events ordered by aggregate version.
 
-Balance must never rely on mutable columns.
+Never rely on created_at alone.
 
-Rebuilding balance from events must always produce identical result.
+Rebuilding ledger from events MUST produce identical balance.
 
----
+Replay MUST NOT alter financial results.
 
-## 14. Audit & Compliance Guarantees
+------------------------------------------------------------
 
-The financial model guarantees:
+15. FORBIDDEN ACTIONS
 
-- Complete historical traceability
-- Deterministic balance computation
-- Immutable transaction history
-- Tenant-isolated financial ledgers
-- No retroactive mutation
-- Atomic financial operations
+The system MUST NEVER allow:
 
-Financial events are permanent audit records.
+- Updating financial_events.
+- Deleting financial_events.
+- Storing derived balances as source of truth.
+- Negative outstanding balance.
+- Overpayment.
+- Financial event before ORDER_RECEIVED.
+- Completing order before financial resolution.
+- Direct ORDER_COMPLETED from financial domain.
 
----
+Any violation is a critical system error.
 
-## 15. Forbidden Financial Actions
+------------------------------------------------------------
 
-The system must never allow:
+FINAL FINANCIAL GUARANTEE
 
-- Updating financial_events
-- Deleting financial_events
-- Rewriting historical balances
-- Negative balances
-- Overpayment
-- Skipping financial closing
-- Completing order before pickup
+This Financial Model guarantees:
 
-Any of these is a critical violation.
-
----
-
-## Final Financial Guarantee
-
-The Financial Model guarantees:
-
-- Strict price locking
-- Immutable ledger
-- Deterministic balance tracking
+- Strict price immutability
+- Immutable append-only ledger
+- Deterministic balance derivation
 - Proper debt lifecycle
 - Safe partial payments
-- Secure ownership transfers
-- Full auditability
-- Multi-tenant financial isolation
+- Safe ownership transfer
+- Tenant-isolated financial data
+- Replay-safe financial reconstruction
+- Strict aggregate boundaries
 
-Financial integrity is non-negotiable.
+Financial integrity is absolute.
