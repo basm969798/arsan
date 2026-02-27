@@ -1,291 +1,279 @@
-0. Purpose & Authority
+# SYSTEM_INVARIANTS.md
 
-This document defines the non-negotiable architectural invariants of the system.
+NON-NEGOTIABLE ARCHITECTURAL INVARIANTS
+
+0. PURPOSE & AUTHORITY
+
+This document defines the absolute architectural invariants of the system.
 
 These invariants:
 
-Apply to all services, modules, agents, and integrations.
+- Apply to all services, modules, agents, jobs, APIs, and integrations.
+- Override any conflicting implementation detail.
+- Are mandatory for both human and AI-generated implementations.
 
-Are mandatory for both human and AI-generated implementations.
-
-Override any conflicting implementation detail.
-
-If any implementation conflicts with this document:
-
+If implementation conflicts with this document:
 THIS DOCUMENT PREVAILS.
 
-1. System Definitions
+------------------------------------------------------------
 
-For clarity:
+1. SYSTEM DEFINITIONS
 
 Tenant = A company (isolated business boundary).
-
-Aggregate = A domain consistency boundary.
-
+Aggregate = A transactional consistency boundary.
 Event = An immutable record describing something that happened.
-
 Financial Event = An immutable ledger entry affecting monetary state.
-
 Derived State = Any state computed from events or validated transitions.
 
-2. Multi-Tenancy Invariants
+------------------------------------------------------------
+
+2. MULTI-TENANCY INVARIANTS
+
 2.1 Tenant Isolation
 
-Every tenant-owned domain table MUST contain company_id.
-
-All queries MUST be filtered by company_id.
-
-Cross-tenant data access is strictly forbidden.
-
-No shared mutable state between tenants.
-
-Caches MUST be tenant-aware.
+- Every tenant-owned domain table MUST contain company_id.
+- All queries MUST be filtered by company_id.
+- Cross-tenant data access is strictly forbidden.
+- No shared mutable state between tenants.
+- Caches MUST be tenant-aware.
 
 2.2 Database Enforcement
 
-company_id MUST be indexed.
+- company_id MUST be indexed.
+- Composite indexes MUST include company_id where applicable.
+- Foreign keys MUST NOT allow cross-tenant references.
+- No domain entity may exist without tenant ownership unless explicitly marked as system-level.
+- Background jobs MUST enforce tenant context.
 
-Composite indexes MUST include company_id where applicable.
+------------------------------------------------------------
 
-Foreign keys MUST not allow cross-tenant reference.
+3. AGGREGATE BOUNDARY INVARIANTS
 
-No domain entity may exist without tenant ownership unless explicitly marked as system-level.
+- Aggregates MUST NOT directly mutate other aggregates.
+- Cross-aggregate coordination MUST occur ONLY via:
+  - Domain events
+  - Process Manager orchestration
+- No aggregate may bypass its own validation rules.
+- All aggregate mutations MUST occur via domain commands.
 
-Background jobs MUST enforce tenant context.
+------------------------------------------------------------
 
-3. Event Integrity Invariants
-3.1 Event Immutability
+4. EVENT INTEGRITY INVARIANTS
 
-All domain events are append-only.
+4.1 Event Immutability
 
-Events MUST NEVER be updated.
+- All domain events are append-only.
+- UPDATE is forbidden.
+- DELETE is forbidden.
+- Corrections MUST use compensating events.
+- Event schema versioning MUST be supported.
 
-Events MUST NEVER be deleted.
+4.2 Event Ordering & Concurrency
 
-Corrections MUST be performed using compensating events.
+- Events MUST maintain strict ordering per aggregate.
+- Aggregate version or sequence number is mandatory.
+- Optimistic concurrency control MUST prevent race conditions.
+- Out-of-order state mutation is forbidden.
 
-Event schema versioning MUST be supported.
-
-3.2 Event Ordering & Concurrency
-
-Events MUST maintain strict ordering per aggregate.
-
-A version or sequence number is mandatory.
-
-Optimistic concurrency control MUST prevent race conditions.
-
-No out-of-order state mutation allowed.
-
-3.3 State Derivation
+4.3 State Derivation
 
 Domain state MUST be derived from:
 
-Events
-
-Or validated state transitions
+- Events
+OR
+- Validated state transitions that emit events.
 
 Direct mutation bypassing event logic is forbidden.
 
-Projections MUST be rebuildable from event history.
+Projections MUST be fully rebuildable from event history.
 
-4. Financial Integrity Invariants
-4.1 Financial Immutability
+Projection handlers MUST be idempotent.
 
-financial_events table is append-only.
+Event replay MUST NOT produce duplicate side effects.
 
-UPDATE is forbidden.
+------------------------------------------------------------
 
-DELETE is forbidden.
+5. FINANCIAL INTEGRITY INVARIANTS
 
-Corrections MUST use compensating entries.
+5.1 Financial Immutability
 
-Financial events MUST be idempotent.
+- financial_events table is append-only.
+- UPDATE is forbidden.
+- DELETE is forbidden.
+- Corrections MUST use compensating entries.
+- Financial events MUST be idempotent.
 
-4.2 Price Locking
+5.2 Price Locking
 
-Order price MUST be locked upon offer acceptance.
+- Order price MUST be locked at ACCEPTED state.
+- Locked price MUST NEVER change.
+- Discounts or adjustments MUST be recorded as separate financial events.
+- Historical totals MUST NEVER be recalculated.
 
-Locked price MUST NEVER change.
-
-Discounts or adjustments MUST be separate financial events.
-
-No recalculation of historical totals is allowed.
-
-4.3 Ledger Consistency
+5.3 Ledger Consistency
 
 Every financial event MUST include:
 
-company_id
+- company_id
+- reference_id
+- event_type
+- amount
+- currency
+- timestamp
 
-reference_id
+Ledger rules:
 
-event_type
+- Balance calculation MUST be deterministic.
+- Reconciliation MUST be possible at any point in time.
+- Financial totals MUST be derived from ledger events only.
+- Direct mutation of balance fields is forbidden.
 
-amount
+5.4 Order–Financial Coupling
 
-currency
+- Order MUST NOT reach COMPLETED if debt balance > 0.
+- Financial records MUST NOT exist before order reaches RECEIVED.
+- Financial closure MUST be explicit and event-driven.
+- Order financial state MUST always be consistent with ledger balance.
 
-timestamp
+------------------------------------------------------------
 
-The ledger MUST satisfy:
+6. ORDER LIFECYCLE INVARIANTS
 
-Double-entry consistency (if applicable).
+6.1 State Machine Enforcement
 
-Reconciliation capability at any point in time.
+- Order states MUST follow SYSTEM_STATE_MACHINE_MATRIX.md.
+- Skipping states is forbidden.
+- Illegal transitions MUST raise domain errors.
+- Final states (COMPLETED, CANCELLED) are immutable.
 
-Deterministic balance calculation.
+6.2 State Change Rule
 
-5. Order Lifecycle Invariants
-5.1 State Machine Enforcement
+- Every state change MUST emit an event.
+- Direct status mutation is forbidden.
+- State transitions MUST be validated at domain layer.
+- No implicit transitions allowed.
 
-Order states MUST follow the defined transition matrix.
+6.3 Cancellation Cutoff
 
-Skipping states is forbidden.
+- Once order enters PREPARING state,
+  cancellation by trader is permanently disabled.
+- Cancellation is strictly forbidden after RECEIVED.
 
-Final states are immutable.
+------------------------------------------------------------
 
-Illegal transitions MUST raise errors.
+7. API CONTRACT INVARIANTS
 
-5.2 State Change Rule
+- API responses MUST conform strictly to SYSTEM_API_CONTRACT.
+- Breaking response structure is forbidden.
+- API versioning MUST be respected.
+- Idempotency MUST be enforced where defined.
+- API MUST NOT mutate state outside defined commands.
+- Backward compatibility MUST be preserved unless explicitly versioned.
 
-Every order state change MUST emit an event.
+------------------------------------------------------------
 
-Direct status mutation is forbidden.
+8. AUTHORIZATION INVARIANTS
 
-State transitions MUST be validated at domain layer.
+- RBAC MUST be enforced at:
+  - Middleware layer
+  - Domain layer
+- Permission checks MUST NOT be bypassable.
+- Tenant validation MUST occur BEFORE permission evaluation.
+- No data may be fetched before tenant validation.
+- Super admin privileges MUST be explicitly defined and fully logged.
 
-No implicit transitions allowed.
+------------------------------------------------------------
 
-6. API Contract Invariants
+9. DATA INTEGRITY INVARIANTS
 
-API responses MUST conform strictly to SYSTEM_API_CONTRACT.
+- No orphan records allowed.
+- Aggregates MUST maintain referential integrity.
+- Soft deletes MUST NOT affect:
+  - Event history
+  - Financial history
+- Hard deletes on event or financial tables are strictly forbidden.
+- All timestamps MUST be stored in UTC.
+- All financial calculations MUST use persisted timestamps.
 
-Breaking response structure is forbidden.
+------------------------------------------------------------
 
-Versioning MUST be respected.
-
-Idempotency MUST be enforced where defined.
-
-API MUST NOT mutate state outside defined contracts.
-
-Backward compatibility MUST be preserved unless versioned.
-
-7. Authorization Invariants
-
-RBAC MUST be enforced at:
-
-Middleware layer
-
-Domain layer
-
-Permission checks MUST NOT be bypassable.
-
-Tenant isolation MUST be validated BEFORE permission evaluation.
-
-No data should be fetched before tenant validation.
-
-Super admin privileges MUST be explicitly defined and logged.
-
-8. Data Integrity Invariants
-
-No orphan records allowed.
-
-All aggregates MUST maintain referential integrity.
-
-Soft deletes MUST NOT violate:
-
-Financial history
-
-Event history
-
-Hard deletes on financial or event tables are forbidden.
-
-All timestamps MUST be timezone-safe (UTC).
-
-9. Mutation & Consistency Rules
+10. MUTATION & CONSISTENCY RULES
 
 The system strictly forbids:
 
-Direct mutation of derived state.
+- Direct mutation of derived state.
+- Direct mutation of financial totals.
+- Cross-aggregate mutation without domain validation.
+- Implicit state changes.
+- Hidden side effects.
 
-Direct mutation of financial totals.
+All state changes MUST be explicit, validated, and traceable.
 
-Cross-aggregate mutation without domain validation.
+------------------------------------------------------------
 
-Implicit state changes.
+11. OBSERVABILITY & AUDIT INVARIANTS
 
-Hidden side effects.
+- Every critical domain action MUST be traceable.
+- Financial operations MUST be auditable.
+- Event history MUST allow full reconstruction.
+- Silent failures are forbidden.
+- All domain errors MUST be explicit and structured.
 
-All state changes MUST be explicit and traceable.
+------------------------------------------------------------
 
-10. Observability & Audit Invariants
-
-Every critical domain action MUST be traceable.
-
-Financial operations MUST be auditable.
-
-Event history MUST allow full reconstruction.
-
-No silent failure allowed.
-
-11. Agent Execution Rules
+12. AGENT EXECUTION RULES
 
 Any AI Agent building or modifying the system:
 
 MUST:
 
-Follow SYSTEM_DATA_MODEL
-
-Follow SYSTEM_EVENT_MODEL
-
-Follow SYSTEM_FINANCIAL_MODEL
-
-Follow SYSTEM_API_CONTRACT
-
-Validate against state transition matrix
+- Follow SYSTEM_DATA_MODEL.md
+- Follow SYSTEM_EVENT_MODEL.md
+- Follow SYSTEM_FINANCIAL_MODEL.md
+- Follow SYSTEM_API_CONTRACT.md
+- Validate against SYSTEM_STATE_MACHINE_MATRIX.md
+- Respect aggregate boundaries
+- Preserve immutability rules
 
 MUST NOT:
 
-Invent new states
-
-Modify immutable records
-
-Remove tenant isolation
-
-Introduce undocumented behavior
-
-Skip domain validation
+- Invent new states
+- Modify immutable records
+- Remove tenant isolation
+- Introduce undocumented behavior
+- Skip domain validation
+- Bypass event emission
 
 If ambiguity exists:
 → The agent MUST request clarification.
 
-12. Infrastructure & Deployment Constraints
+------------------------------------------------------------
 
-No production deployment without migration integrity.
+13. INFRASTRUCTURE & DEPLOYMENT CONSTRAINTS
 
-Schema changes MUST preserve invariants.
+- No production deployment without migration integrity.
+- Schema changes MUST preserve invariants.
+- Backups MUST preserve event and financial history.
+- Scaling MUST NOT break tenant isolation.
+- Replay or rebuild operations MUST preserve deterministic results.
 
-Backups MUST preserve event and financial history.
+------------------------------------------------------------
 
-Scaling MUST NOT break tenant isolation.
-
-13. Architectural Precedence Rule
+14. ARCHITECTURAL PRECEDENCE RULE
 
 Hierarchy of authority:
 
-SYSTEM_INVARIANTS.md
-
-SYSTEM_DATA_MODEL.md
-
-SYSTEM_EVENT_MODEL.md
-
-SYSTEM_FINANCIAL_MODEL.md
-
-SYSTEM_API_CONTRACT.md
-
-Implementation details
+1. SYSTEM_INVARIANTS.md
+2. SYSTEM_STATE_MACHINE_MATRIX.md
+3. SYSTEM_DATA_MODEL.md
+4. SYSTEM_EVENT_MODEL.md
+5. SYSTEM_FINANCIAL_MODEL.md
+6. SYSTEM_API_CONTRACT.md
+7. Implementation details
 
 Implementation MUST conform to this hierarchy.
+
+------------------------------------------------------------
 
 FINAL RULE
 
@@ -294,5 +282,3 @@ If implementation contradicts invariants:
 The implementation is wrong.
 The invariants are correct.
 The system must be corrected.
-
-
