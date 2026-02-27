@@ -1,462 +1,271 @@
-🏛 FINAL BUSINESS LOGIC (Unified & Architecturally Structured)
-1️⃣ Order Types
+# SYSTEM_HIGH_LEVEL_ARCHITECTURE.md
 
-There are only two types of orders in the system:
+## 1. System Purpose
 
-A — Direct Order
+The system is a multi-role order management platform that connects:
 
-Trader selects item from catalog.
+- Traders
+- Suppliers
+- Workshops
+- Admins
 
-Chooses specific supplier.
+It manages:
 
-Sends order directly.
+- Order lifecycle
+- Financial settlement (cash or debt)
+- Ownership transfer between traders
+- Catalog and supplier inventory
 
-Supplier actions:
+The server is the single source of truth.
 
-Accept
+The UI never decides state.
 
-Reject
+---
 
-When supplier accepts:
+## 2. System Boundaries
 
-👉 Price becomes locked inside the order.
+The system DOES NOT include:
 
-B — Public Request Order
+- Electronic payment processing
+- Delivery logistics
+- Fund holding
+- Wallet services
 
-Trader publishes request without selecting supplier.
+All payments are recorded, not processed.
 
-Eligible suppliers submit offers.
+---
 
-Trader selects exactly one offer.
+## 3. Core Domains
 
-When offer is selected:
+The system is divided into four isolated domains:
 
-👉 Price becomes locked inside the order.
-
-2️⃣ Order Lifecycle (Core Flow)
-
-The lifecycle is fixed and cannot be skipped:
-
-Order creation
-
-Waiting for supplier / collecting offers
-
-Acceptance or offer selection
-
-Order preparation
-
-Pickup via QR
-
-Financial closing
-
-No step can be bypassed.
-
-3️⃣ Price Locking
-
-Price becomes immutable when:
-
-Supplier accepts (direct order)
-
-Trader selects offer (public request)
-
-Later supplier price updates:
-
-❌ Do NOT affect existing orders.
-
-4️⃣ Pickup (Atomic Operation)
-
-Pickup is a single atomic server-side transaction:
-
-QR verification
-
-Pickup confirmation
-
-State moves to Received
-
-Financial phase opens
-
-After pickup:
-
-❌ No cancellation allowed.
-
-5️⃣ Financial Closing (Mandatory Decision)
-
-After pickup, trader must choose:
-
-✅ Cash closing
-
-✅ Debt registration
-
-Order cannot finish without this decision.
-
-6️⃣ Financial Records
-
-Golden rule:
-
-👉 No financial record is created before pickup completion.
-
-Financial records are:
-
-Immutable
-
-Append-only
-
-Event-based
-
-7️⃣ Partial Payments
-
-If debt is selected:
-
-Multiple payments allowed
-
-Each payment = independent financial event
-
-Debt closes automatically when balance reaches zero
-
-8️⃣ Ownership Transfer Between Traders
-
-Flow:
-
-Transfer request sent
-
-Second party accepts
-
-Ownership transferred
-
-Financial event recorded
-
-Ownership state is independent from order lifecycle state.
-
-9️⃣ Cancellation & Rejection Rules
-
-Before acceptance:
-
-Trader may cancel if supplier does not respond.
-
-If supplier rejects:
-
-Order returns to open state.
-
-Trader may:
-
-Select another supplier
-
-Convert to public request
-
-After supplier acceptance:
-
-Cancellation allowed only before pickup.
-
-After pickup:
-❌ No cancellation allowed.
-
-🔟 System Boundaries (Fixed)
-
-No electronic payments
-
-No delivery system
-
-Platform does NOT hold funds
-
-⭐ Role Responsibility
-Operation	Responsible
-Order creation	Trader
-Order acceptance	Supplier
-Order preparation	Supplier
-Pickup	Trader
-Financial closing	Trader
-
-Subscription is NOT a role.
-
-Roles:
-
-Supplier
-
-Trader
-
-Workshop
-
-Admin
-
-Each role has strictly defined permissions.
-
-⭐ Final Order States
-
-An order is finished when:
-
-Cancelled
-
-Cash closed
-
-Debt closed
-
-Final states:
-
-Completed
-
-Rejected
-
-Cancelled
-
-No transitions allowed after final state.
-
-🔥 Unified State Management
-Order States
-
-New
-
-Waiting for supplier
-
-Accepted
-
-Preparing
-
-Ready for pickup
-
-Received
-
-Completed
-
-Rejected
-
-Cancelled
-
-State Ownership Rules
-Transition	Actor
-New → Waiting	System
-Waiting → Accepted	Supplier
-Waiting → Rejected	Supplier
-Accepted → Preparing	Supplier
-Preparing → Ready	Supplier
-Ready → Received	Trader (QR)
-Received → Completed	Trader (financial decision)
-Waiting → Cancelled	Trader (before acceptance)
-
-Server validates all transitions.
-
-🧾 Event Logging (Mandatory)
-
-Every state change logs:
-
-Order ID
-
-Previous state
-
-New state
-
-Actor
-
-Timestamp
-
-Event log is append-only.
-
-⚙ Concurrency & Consistency Rules
-
-Server is single source of truth.
-
-Conditional state transitions required.
-
-All operations atomic.
-
-Idempotency enforced.
-
-Race condition protection.
-
-Safe retries supported.
-
-Late operations rejected.
-
-Price locking enforced at acceptance.
-
-Event ordering determined by server.
-
-State separation enforced:
-
-Separate states:
-
-Order lifecycle state
-
-Financial state
-
-Ownership state
-
-Catalog state
-
-Golden rule:
-
-👉 UI never decides state.
-👉 Server decides state.
-
-📦 Catalog Architecture
-
-Two-layer model:
-
-Technical Catalog
-
-Contains:
-
-Product ID
-
-Metadata
-
-Compatibility
-
-Approval state
-
-Does NOT contain:
-
-Price
-
-Quantity
-
-Supplier data
-
-Supplier Inventory Layer
-
-Contains:
-
-Price
-
-Quantity
-
-Availability
-
-Tier pricing
-
-🔎 Search Architecture
-
-Two modes:
-
-Text search
-
-VIN search (fallback external API)
-
-Search always begins from Technical Catalog.
-
-🧠 Unified Event-Based Architecture
-
-State is NOT stored as static truth.
-
-State is derived from:
-
-1️⃣ Events
-2️⃣ Transition rules
-3️⃣ Process coordination
-
-Golden rule:
-
-👉 State = Events + Rules
-👉 Not a static database field
-
-🧩 System Layers (Architectural View)
-
-Events Layer
-All changes are emitted as domain events.
-
-State Projection Layer
-Current state derived from events.
-
-Transition Rules Layer
-Validates allowed state changes.
-
-Process Manager (Saga Coordination)
-
-4️⃣ Process Manager (Saga Coordination)
-Purpose
-
-Handle complex workflows across multiple domains without breaking isolation.
-
-Responsibilities
-
-The Process Manager:
-
-Listens to domain events
-
-Applies business rules
-
-Dispatches commands to domains
-
-Coordinates cross-domain flows
-
-Ensures eventual consistency
-
-Architectural Rules
-
-Domains NEVER call other domains directly.
-
-Domains NEVER share transactions.
-
-Communication only via events.
-
-Cross-domain consistency handled via Saga.
-
-Each domain remains isolated.
-
-Example Cross-Domain Flows
-Order Acceptance
-
-OrderAccepted event →
-Process Manager →
-Triggers price lock + preparation start.
-
-Pickup
-
-OrderReceived event →
-Process Manager →
-Opens financial decision phase.
-
-Debt Flow
-
-DebtRegistered →
-DebtPaymentRecorded →
-Process Manager checks balance →
-If zero → emits DebtClosed →
-Moves order to Completed.
-
-🏗 Domain Isolation
-
-Separated domains:
-
-Order Domain
-
-Financial Domain
-
-Ownership Domain
-
-Catalog Domain
+1. Order Domain
+2. Financial Domain
+3. Ownership Domain
+4. Catalog Domain
 
 Each domain:
 
-Owns its state
+- Owns its state
+- Executes its own transactions
+- Emits events
+- Does not access other domains directly
 
-Emits its events
+Cross-domain coordination happens only through a Process Manager.
 
-Has independent transactions
+---
 
-Does not access other domain internals
+## 4. Order Types
 
-🏁 Ultimate System Principles
+There are exactly two order types:
 
-Server is authority.
+### A. Direct Order
 
-State derived from events.
+- Trader selects product
+- Selects specific supplier
+- Sends order
+- Supplier accepts or rejects
 
-Price locks at acceptance.
+Price locks when supplier accepts.
 
-No financial record before pickup.
+### B. Public Request Order
+
+- Trader publishes request
+- Suppliers submit offers
+- Trader selects one offer
+
+Price locks when offer is selected.
+
+After price locking:
+Supplier price changes do not affect the order.
+
+---
+
+## 5. Order Lifecycle
+
+The lifecycle is fixed and sequential:
+
+1. Order Created
+2. Waiting for Supplier / Collecting Offers
+3. Accepted
+4. Preparing
+5. Ready for Pickup
+6. Received (QR verified)
+7. Financial Decision
+8. Completed
+
+Cancellation is allowed only before pickup.
+
+No transitions allowed after final states.
+
+---
+
+## 6. Final States
+
+An order reaches a final state when:
+
+- Cancelled
+- Rejected (before acceptance)
+- Completed (after financial closing)
 
 Final states are immutable.
 
-Domains are isolated.
+---
 
-Coordination via Process Manager only.
+## 7. Price Locking Rule
 
-Event log is source of truth.
+Price becomes immutable when:
 
-🔥 Absolute Golden Rules
+- Supplier accepts (Direct Order)
+- Trader selects offer (Public Request)
 
-👉 Server decides state.
-👉 UI displays state.
-👉 Domains remain independent.
-👉 Coordination happens only through Events + Process Manager.
-👉 State is a derived result — not a stored assumption.
+Price remains fixed regardless of future catalog updates.
+
+---
+
+## 8. Pickup (Atomic Operation)
+
+Pickup is a single atomic server transaction:
+
+- QR validation
+- Order marked as Received
+- Financial phase opened
+
+After pickup:
+Cancellation is permanently disabled.
+
+---
+
+## 9. Financial Model
+
+No financial record is created before pickup.
+
+After pickup, trader must choose:
+
+- Cash closing
+- Debt registration
+
+Debt rules:
+
+- Multiple partial payments allowed
+- Each payment is recorded independently
+- Debt automatically closes when balance reaches zero
+
+Financial records are:
+
+- Immutable
+- Append-only
+- Server-controlled
+
+---
+
+## 10. Ownership Transfer
+
+Ownership transfer between traders:
+
+1. Transfer request created
+2. Second party accepts
+3. Ownership changes
+4. Financial event recorded
+
+Ownership lifecycle is independent from order lifecycle.
+
+---
+
+## 11. State Management Model
+
+The system enforces:
+
+- Conditional state transitions
+- Server-side validation
+- Atomic operations
+- Idempotent commands
+- Race condition protection
+
+State separation exists for:
+
+- Order lifecycle state
+- Financial state
+- Ownership state
+- Catalog state
+
+Each state machine is isolated.
+
+---
+
+## 12. Event Logging
+
+Every state change records:
+
+- Entity ID
+- Previous state
+- New state
+- Actor
+- Timestamp
+
+Event log is append-only.
+
+State is derived from validated transitions, not UI assumptions.
+
+---
+
+## 13. Catalog Architecture
+
+Two-layer model:
+
+### Technical Catalog
+Contains:
+- Product ID
+- Metadata
+- Compatibility
+- Approval state
+
+Does NOT contain:
+- Price
+- Quantity
+- Supplier data
+
+### Supplier Inventory
+Contains:
+- Price
+- Quantity
+- Availability
+- Tier pricing
+
+Search starts from Technical Catalog.
+
+Supported search modes:
+
+- Text search
+- VIN search (external API fallback)
+
+---
+
+## 14. Process Manager (Cross-Domain Coordination)
+
+The Process Manager:
+
+- Listens to domain events
+- Applies cross-domain rules
+- Dispatches commands
+- Ensures eventual consistency
+
+Domains do not call each other directly.
+
+Example flows:
+
+OrderAccepted → triggers preparation start  
+OrderReceived → enables financial phase  
+DebtClosed → marks order Completed  
+
+---
+
+## 15. Core Architectural Principles
+
+- Server is authority
+- Final states are immutable
+- Price locks at acceptance
+- No financial record before pickup
+- Domains are isolated
+- Coordination via Process Manager only
+- UI reflects server state only
