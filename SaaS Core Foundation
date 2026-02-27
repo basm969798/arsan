@@ -1,205 +1,274 @@
-🟢 المرحلة 1 — SaaS Core Foundation
+أحسنت 👌
+نعم — كلامك صحيح.
 
-هذه المرحلة تبني "الأساس الذي يمنع أو يسمح بالتنفيذ".
+الترتيب الذي كتبته قبل قليل كان “منطقي هندسيًا”،
+لكن ليس مضبوطًا 100% على ما تم تجميده في الوثائق.
 
-1️⃣ Project Scaffold
+نحن الآن لا نبني مشروعًا عاديًا.
+نحن نبني نظامًا تم تجميد معماريته رسميًا.
 
-NestJS project
+إذن ترتيب البناء يجب أن يعكس **الوثائق المجمدة حرفيًا**،
+وليس فقط الاعتماد التقني.
 
-folder structure
+---
 
-modules empty
+# ✅ الترتيب النهائي الصحيح للبناء
 
-shared kernel
+(متوافق 100% مع ما تم تجميده)
 
-2️⃣ Identity Domain
+سنبني وفق طبقات السلطة الفعلية للنظام:
 
-users table
+---
 
-password hashing
+# 🟢 المرحلة 0 — System Kernel (الأساس الإجباري)
 
-JWT
+هذه المرحلة تُترجم:
 
-refresh tokens
+* SYSTEM_CODE_ARCHITECTURE.md
+* SYSTEM_FILE_STRUCTURE_STANDARD.md
+* SYSTEM_MODULE_BOUNDARIES.md
 
-login / register
+### 1️⃣ Project Kernel Scaffold
 
-email verification skeleton
+* إنشاء مشروع NestJS
+* إنشاء مجلدات حسب Bounded Context
+* إنشاء shared kernel
+* منع cross-module imports
+* إعداد ESLint rules
+* إعداد base exception classes
 
-3️⃣ Company Domain
+🚨 بدون هذه المرحلة سيبدأ Agent في الفوضى.
 
-companies table
+---
 
-create company flow
+# 🟢 المرحلة 1 — SaaS Platform Layer
 
-owner assignment
+(ترجمة SYSTEM_SAAS_PLATFORM_ARCHITECTURE.md حرفيًا)
 
-company status enum
+### 2️⃣ Identity Domain
 
-tenant resolution middleware
+* user entity
+* password hashing
+* login/register
+* JWT
+* refresh tokens
 
-4️⃣ RBAC System
+---
 
-roles
+### 3️⃣ Company Domain
 
-permissions
+* company entity
+* owner assignment
+* company status enum
+* tenant resolution middleware
 
-user_company_roles
+---
 
-role guard
+### 4️⃣ Authorization (SYSTEM_AUTHORIZATION.md)
 
-5️⃣ Plan Domain
+* roles
+* permissions
+* role guards
+* tenant validation guard
 
-plans table
+---
 
-feature flags
+### 5️⃣ Plan Domain
 
-limits fields (configurable)
+* plans table
+* limits structure
+* feature flags
 
-6️⃣ Subscription Domain
+---
 
-subscriptions table
+### 6️⃣ Subscription Domain
 
-subscription status enum
+* subscription entity
+* subscription status enum
+* trial
+* expiration logic
+* grace period
+* admin override support
 
-trial logic
+---
 
-expiration logic
+### 7️⃣ SaaS Enforcement Middleware
 
-company status enforcement middleware
+(تنفيذ بند "Enforcement Order")
 
-7️⃣ Usage Enforcement Layer
+* Authentication
+* Tenant resolution
+* Company status check
+* Subscription status check
+* Usage limit check
+* Role check
 
-check max_users
+🚨 الآن فقط يصبح النظام يسمح بالدخول.
 
-check max_orders
+---
 
-feature gating
+# 🟡 المرحلة 2 — Business Engine
 
-الآن انتهى SaaS Core.
+(ترجمة SYSTEM_STATE_MACHINE_MATRIX.md)
 
-بدونه لا نبني أي Business Logic.
+### 8️⃣ Order Aggregate Skeleton
 
-🟡 المرحلة 2 — Business Engine
+* order entity
+* status enum
+* version field
+* repository interface
 
-الآن نبدأ المحرك الفعلي.
+---
 
-8️⃣ Order Domain Skeleton
+### 9️⃣ State Machine Enforcement
 
-order entity
+* transition validator
+* illegal transition error
+* optimistic locking
 
-status enum
+---
 
-version field
+### 🔟 Offer / Acceptance Flow
 
-basic creation flow
+---
 
-9️⃣ State Machine Enforcement
+### 1️⃣1️⃣ Pickup Atomic Transaction
 
-transition validation
+---
 
-illegal transition error
+# 🔵 المرحلة 3 — Financial Engine
 
-optimistic locking
+(ترجمة SYSTEM_FINANCIAL_MODEL.md)
 
-🔟 Offer / Supplier Flow
-1️⃣1️⃣ Pickup Atomic Flow
+### 1️⃣2️⃣ Financial Ledger
 
-QR validation
+* financial_events table
+* append-only enforcement
+* no update policy
 
-transaction wrapper
+---
 
-🔵 المرحلة 3 — Financial Engine
-1️⃣2️⃣ Financial Ledger
+### 1️⃣3️⃣ Cash Closing Flow
 
-financial_events table
+---
 
-append-only
+### 1️⃣4️⃣ Debt Registration Flow
 
-no update rule
+---
 
-1️⃣3️⃣ Cash Closing
-1️⃣4️⃣ Debt Registration
-1️⃣5️⃣ Partial Payment Flow
-🟣 المرحلة 4 — Ownership
-1️⃣6️⃣ Ownership Transfer Model
+### 1️⃣5️⃣ Partial Payment Flow
 
-request
+---
 
-accept
+# 🟣 المرحلة 4 — Ownership
 
-atomic update
+(ترجمة Ownership rules)
 
-financial transfer event
+### 1️⃣6️⃣ Ownership Transfer
 
-🟠 المرحلة 5 — Billing Layer (Provider Ready)
-1️⃣7️⃣ Invoice Model
-1️⃣8️⃣ Payment Provider Interface
-1️⃣9️⃣ Webhook Endpoint Skeleton
-🟡 المرحلة 6 — Notifications & Background Jobs
-2️⃣0️⃣ Email Queue
-2️⃣1️⃣ Scheduler (trial expiry, grace, override expiry)
-🧱 المرحلة 7 — Platform Admin
-2️⃣2️⃣ Admin Module
+* request
+* accept
+* atomic update
+* financial transfer event
 
-suspend company
+---
 
-override subscription
+# 🟠 المرحلة 5 — Event Layer
 
-change plan
+(ترجمة SYSTEM_EVENT_MODEL.md)
 
-audit logs
+### 1️⃣7️⃣ system_events table
 
-🧠 لماذا هذا الترتيب هو الصحيح فعليًا؟
+### 1️⃣8️⃣ event dispatcher
 
-لأن:
+### 1️⃣9️⃣ saga skeleton
 
-Order يعتمد على Company
+---
 
-Company يعتمد على Identity
+# 🟡 المرحلة 6 — Billing Abstraction
 
-Subscription يعتمد على Company
+(جزء SaaS المجمد)
 
-Usage يعتمد على Subscription
+### 2️⃣0️⃣ Invoice Model
 
-Financial يعتمد على Order
+### 2️⃣1️⃣ Payment Provider Interface
 
-Billing يعتمد على Subscription
+### 2️⃣2️⃣ Webhook Endpoint
 
-Notifications تعتمد على كل شيء
+---
 
-إذا بدأت بـ Order قبل Subscription
-ستعيد كل شيء.
+# 🟢 المرحلة 7 — Notification & Background Jobs
 
-🔥 ما الذي لا نبنيه الآن؟
+### 2️⃣3️⃣ Email Queue
 
-Ranking
+### 2️⃣4️⃣ Scheduler (trial, grace, override expiry)
 
-Analytics
+---
 
-Advanced metrics
+# 🧱 المرحلة 8 — Platform Admin
 
-Optimization
+### 2️⃣5️⃣ Admin Module
 
-UI polish
+* suspend company
+* override subscription
+* change plan
+* audit logs
 
-🏁 الخلاصة النهائية
+---
 
-ترتيب البناء الصحيح هو:
+# 🔥 لماذا هذا هو الترتيب النهائي الصحيح؟
 
-1  Scaffold
-2  Identity
-3  Company
-4  RBAC
-5  Plan
-6  Subscription
-7  Usage Enforcement
-8  Order
-9  State Machine
-10 Financial
-11 Ownership
-12 Billing Abstraction
+لأنه يعكس:
+
+1️⃣ Hierarchy of Authority
+2️⃣ Dependency Flow
+3️⃣ SaaS → Business → Financial → Events
+4️⃣ Enforcement Order المجمد رسميًا
+
+ولا يوجد بناء عكسي.
+
+---
+
+# 📌 الشكل النهائي المختصر
+
+```text
+0  Kernel Scaffold
+1  Identity
+2  Company
+3  Authorization
+4  Plan
+5  Subscription
+6  SaaS Enforcement
+7  Order
+8  State Machine
+9  Financial
+10 Ownership
+11 Events
+12 Billing
 13 Notifications
 14 Admin
+```
 
-هذا هو الترتيب الصحيح هندسيًا.
+هذا هو النهائي.
+
+---
+
+# ⚠️ أهم نقطة
+
+لن نبدأ Order قبل:
+
+* Subscription
+* Company Status Enforcement
+* Usage Limit Engine
+
+وإلا سنعيد البناء لاحقًا.
+
+---
+
+الآن أصبح عندك ترتيب نظيف، نهائي، متوافق مع كل ما جمدناه.
+
+السؤال الأخير:
+
+هل نبدأ الآن بكتابة
+🔹 Prompt 0 — Kernel Scaffold
+بطريقة منضبطة جدًا وفق SYSTEM_FILE_STRUCTURE_STANDARD؟
