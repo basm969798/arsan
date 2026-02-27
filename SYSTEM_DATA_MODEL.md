@@ -1,416 +1,349 @@
-SYSTEM_DATA_MODEL.md
-Arsan — Official System Data Model (Architecture-Aligned)
-1. Purpose
+# SYSTEM_DATA_MODEL.md
+Arsan — Official System Data Model (Architecture-Frozen)
 
-This document defines the authoritative database structure for Arsan.
+------------------------------------------------------------
+
+1. PURPOSE
+
+This document defines the authoritative database structure.
 
 It guarantees alignment with:
 
-Order lifecycle rules
-
-Event-based architecture
-
-Financial immutability
-
-Multi-tenant isolation
-
-Ownership transfer model
-
-Atomic pickup operation
+- SYSTEM_HIGH_LEVEL_ARCHITECTURE.md
+- SYSTEM_STATE_MACHINE_MATRIX.md
+- SYSTEM_INVARIANTS.md
+- SYSTEM_EVENT_MODEL.md
 
 The database enforces structural integrity.
-The server enforces transition rules.
+The server enforces lifecycle and domain rules.
 
-2. Multi-Tenant Strategy
+------------------------------------------------------------
 
-Arsan uses shared-database multi-tenancy.
+2. MULTI-TENANT STRATEGY
+
+Shared-database multi-tenancy.
 
 Every tenant-owned table MUST contain:
 
 company_id UUID NOT NULL
 
 Mandatory rule:
-
-WHERE company_id = currentTenant
+All queries MUST filter by company_id.
 
 Mandatory index:
-
 INDEX(company_id)
 
 Cross-tenant joins are forbidden.
 
-3. Identity Domain
+------------------------------------------------------------
+
+3. IDENTITY DOMAIN
+
 companies
-
-id (UUID, PK)
-
-name
-
-created_at
-
-updated_at
+- id (UUID, PK)
+- name
+- created_at (UTC)
+- updated_at (UTC)
 
 users
-
-id (UUID, PK)
-
-email (UNIQUE)
-
-password_hash
-
-created_at
+- id (UUID, PK)
+- email (UNIQUE)
+- password_hash
+- created_at (UTC)
 
 user_company_roles
+- id (UUID, PK)
+- user_id (FK → users.id)
+- company_id (FK → companies.id)
+- role_name
+- created_at (UTC)
 
-id (UUID, PK)
+UNIQUE(user_id, company_id, role_name)
 
-user_id (FK → users.id)
+------------------------------------------------------------
 
-company_id (FK → companies.id)
+4. CATALOG DOMAIN
 
-role_name
-
-created_at
-
-Composite index:
-(user_id, company_id)
-
-4. Catalog Domain
 products (Global Technical Catalog)
-
-id (UUID, PK)
-
-name
-
-metadata (JSONB)
-
-created_at
+- id (UUID, PK)
+- name
+- metadata (JSONB)
+- created_at (UTC)
 
 No company_id (global scope).
 
 supplier_inventory
+- id (UUID, PK)
+- company_id (supplier FK)
+- product_id (FK)
+- price
+- quantity
+- is_available
+- updated_at (UTC)
 
-id (UUID, PK)
+UNIQUE(company_id, product_id)
+INDEX(company_id)
 
-company_id (supplier FK)
+------------------------------------------------------------
 
-product_id (FK)
+5. ORDERS DOMAIN
 
-price
-
-quantity
-
-is_available
-
-updated_at
-
-Composite index:
-(company_id, product_id)
-
-5. Orders Domain
-5.1 Order Status Enum
-
-Official lifecycle states:
+5.1 Official Lifecycle States (Projection Cache Only)
 
 NEW
-
 WAITING_FOR_SUPPLIER
-
 ACCEPTED
-
 PREPARING
-
 READY_FOR_PICKUP
-
 RECEIVED
-
 COMPLETED
-
-REJECTED
-
 CANCELLED
 
 Final states:
-
 COMPLETED
-
-REJECTED
-
 CANCELLED
 
-No transitions allowed after final states.
+NOTE:
+status column is a projection cache.
+Authoritative lifecycle state is derived from system_events.
+
+------------------------------------------------------------
 
 5.2 orders
 
-id (UUID, PK)
+- id (UUID, PK)
+- company_id (Trader FK)
+- supplier_company_id (Supplier FK, nullable initially)
+- order_type (DIRECT | PUBLIC)
+- status (ENUM – projection only)
+- locked_price (nullable until ACCEPTED or OFFER_SELECTED)
+- version (integer NOT NULL default 0)  // optimistic locking
+- owner_company_id (FK → companies.id)
+- created_at (UTC)
+- updated_at (UTC)
+- deleted_at (nullable)
 
-company_id (Trader FK)
+INDEX(company_id)
+INDEX(supplier_company_id)
+INDEX(status)
 
-supplier_company_id (Supplier FK, nullable initially)
-
-order_type (DIRECT | PUBLIC)
-
-status (ENUM — above)
-
-locked_price (nullable until locked)
-
-version (integer for optimistic locking)
-
-owner_company_id (FK — for ownership transfer)
-
-created_at
-
-updated_at
-
-deleted_at (nullable)
-
-Indexes:
-(company_id)
-(supplier_company_id)
-(status)
+------------------------------------------------------------
 
 5.3 order_items
 
-id (UUID, PK)
+- id (UUID, PK)
+- order_id (FK)
+- product_id (FK)
+- quantity
+- price_snapshot (immutable after price lock)
 
-order_id (FK)
+INDEX(order_id)
 
-product_id (FK)
+------------------------------------------------------------
 
-quantity
+6. OFFERS (PUBLIC ORDERS)
 
-price_snapshot (immutable after lock)
-
-Index:
-(order_id)
-
-6. Offers (Public Orders)
 offers
+- id (UUID, PK)
+- order_id (FK)
+- supplier_company_id (FK)
+- offered_price
+- is_selected (boolean default false)
+- created_at (UTC)
 
-id (UUID, PK)
+UNIQUE(order_id) WHERE is_selected = true
+INDEX(order_id)
+INDEX(supplier_company_id)
 
-order_id (FK)
+Rules enforced by server:
+- Only one selected offer allowed
+- OFFER_SELECTED event locks price
+- Offer rejection does NOT change order state
 
-supplier_company_id (FK)
+------------------------------------------------------------
 
-offered_price
-
-is_selected (boolean default false)
-
-created_at
-
-Constraint:
-Only ONE offer can have is_selected = true per order.
-
-Index:
-(order_id)
-(supplier_company_id)
-
-7. Pickup Atomic Operation
-
-Pickup must be atomic.
+7. PICKUP (ATOMIC OPERATION)
 
 order_pickup
-
-id (UUID, PK)
-
-order_id (FK UNIQUE)
-
-qr_code_hash
-
-verified_by_user_id
-
-verified_at
-
-created_at
+- id (UUID, PK)
+- order_id (FK UNIQUE)
+- qr_code_hash
+- verified_by_user_id
+- verified_at (UTC)
+- created_at (UTC)
 
 Rules:
 
-Insert only once
+- Insert allowed only once
+- Executed inside single DB transaction
+- Same transaction must emit ORDER_RECEIVED event
+- After RECEIVED → cancellation forbidden
 
-Must execute inside DB transaction
+------------------------------------------------------------
 
-After insert → order.status = RECEIVED
+8. FINANCIAL DOMAIN (APPEND-ONLY LEDGER)
 
-After RECEIVED → no cancellation allowed
+financial_events (Immutable)
 
-8. Financial Domain (Append-Only)
-financial_events
-
-Immutable table.
-
-id (UUID, PK)
-
-company_id (FK)
-
-order_id (FK)
-
-event_type (CASH | DEBT | PAYMENT | TRANSFER)
-
-amount
-
-balance_after
-
-created_at
-
-metadata (JSONB)
+- id (UUID, PK)
+- company_id (FK)
+- order_id (FK)
+- event_type (CASH | DEBT | PAYMENT | TRANSFER)
+- amount
+- currency
+- created_at (UTC)
+- metadata (JSONB)
 
 Rules:
 
-No UPDATE
+- No UPDATE
+- No DELETE
+- Append-only
+- Balance MUST be derived from SUM(events)
+- No derived balance stored as source of truth
+- Debt considered closed when computed balance = 0
 
-No DELETE
+INDEX(company_id)
+INDEX(order_id)
 
-Append-only
+------------------------------------------------------------
 
-balance_after must be deterministic
-
-Debt closes when:
-balance_after = 0
-
-Index:
-(company_id)
-(order_id)
-
-9. Ownership Transfer
-
-Ownership is independent of lifecycle.
+9. OWNERSHIP TRANSFER
 
 ownership_transfers
 
-id (UUID, PK)
-
-order_id (FK)
-
-from_company_id
-
-to_company_id
-
-status (PENDING | ACCEPTED | REJECTED)
-
-requested_at
-
-accepted_at (nullable)
+- id (UUID, PK)
+- order_id (FK)
+- from_company_id
+- to_company_id
+- status (PENDING | ACCEPTED | REJECTED)
+- requested_at (UTC)
+- accepted_at (UTC nullable)
 
 Rules:
 
-Ownership changes only when ACCEPTED
+- Ownership changes only when ACCEPTED
+- Must emit ownership events
+- Financial TRANSFER event must be emitted
+- owner_company_id update is projection aligned with events
+- Cross-aggregate mutation handled via Process Manager
 
-Financial event (TRANSFER) must be created
+------------------------------------------------------------
 
-owner_company_id in orders must update atomically
+10. SYSTEM EVENT STORE (APPEND-ONLY)
 
-10. System Event Log (Append-Only)
 system_events
 
-id (UUID, PK)
+- id (UUID, PK)
+- aggregate_type (string)
+- aggregate_id (UUID)
+- event_type (string)
+- company_id (UUID nullable if global)
+- actor_id (UUID)
+- version (integer per aggregate)
+- payload (JSONB)
+- created_at (UTC)
 
-aggregate_type
+UNIQUE(aggregate_id, version)
+INDEX(company_id)
+INDEX(event_type)
 
-aggregate_id
+Rules:
 
-event_type
+- Append-only
+- No UPDATE
+- No DELETE
+- Authoritative source of lifecycle state
 
-payload (JSONB)
+------------------------------------------------------------
 
-actor_id
+11. IDEMPOTENCY CONTROL (PERSISTENT)
 
-created_at
+command_idempotency
 
-Append-only.
+- id (UUID, PK)
+- aggregate_id (UUID)
+- idempotency_key (string)
+- created_at (UTC)
 
-State is derived from events + transition rules.
+UNIQUE(aggregate_id, idempotency_key)
 
-11. Saga / Process Manager
+Prevents duplicate event emission.
+
+------------------------------------------------------------
+
+12. SAGA / PROCESS MANAGER STORAGE
+
 saga_instances
 
-id (UUID, PK)
+- id (UUID, PK)
+- saga_type
+- aggregate_id
+- state
+- retry_count
+- created_at (UTC)
+- updated_at (UTC)
 
-saga_type
+Internal saga state MUST NOT pollute system_events.
 
-aggregate_id
+------------------------------------------------------------
 
-state
+13. LIFECYCLE ENFORCEMENT
 
-created_at
+Database provides integrity.
+Server must enforce:
 
-updated_at
+- No skipped states
+- No illegal transitions
+- No state change after final state
+- No financial record before RECEIVED
+- Price lock before PREPARING
+- Cancellation forbidden after PREPARING
 
-Used for:
+------------------------------------------------------------
 
-Cross-domain coordination
+14. CONCURRENCY POLICY
 
-Long-running workflows
+- orders.version used for optimistic locking
+- Event store enforces sequential versioning
+- Pickup inside single transaction
+- Financial closing inside single transaction
+- Idempotency enforced via persistent table
 
-Ownership transfer
+------------------------------------------------------------
 
-Financial coordination
-
-12. Lifecycle Enforcement Rules
-
-Server must validate:
-
-No skipping states
-
-No illegal transitions
-
-No state changes after final state
-
-Pickup must happen before financial closing
-
-Price locking must happen before PREPARING
-
-Database supports integrity.
-Server enforces transitions.
-
-13. Concurrency Policy
-
-version column in orders (optimistic locking)
-
-Pickup inside transaction
-
-Financial closing inside transaction
-
-Idempotency keys stored in Redis
-
-14. Soft Delete Policy
+15. SOFT DELETE POLICY
 
 Business tables:
+- deleted_at allowed
 
-deleted_at allowed
+Event and financial tables:
+- NEVER soft delete
+- NEVER update
 
-Financial tables:
+------------------------------------------------------------
 
-NEVER soft delete
+16. MIGRATION RULES
 
-NEVER update
+- Versioned migrations only
+- No manual production edits
+- No rewriting event history
+- No rewriting financial history
+- Backward-compatible schema evolution required
 
-15. Migration Rules
+------------------------------------------------------------
 
-Versioned migrations only
-
-No manual production edits
-
-Backward compatible schema changes
-
-Never rewrite financial history
-
-Final Architectural Guarantee
+FINAL ARCHITECTURAL GUARANTEE
 
 This data model guarantees:
 
-Strict tenant isolation
+- Strict tenant isolation
+- Immutable financial ledger
+- Deterministic lifecycle
+- Atomic pickup
+- Event-store authority
+- Ownership integrity
+- Replay safety
+- Concurrency safety
 
-Immutable financial system
-
-Controlled lifecycle
-
-Atomic pickup
-
-Event-driven integrity
-
-Ownership transfer correctness
-
-Concurrency safety
-
-Violations are critical security issues.
+Any structural violation is a critical system error.
