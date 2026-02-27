@@ -1,62 +1,57 @@
-# Arsan — Official System Event Model (Final)
+# SYSTEM_EVENT_MODEL.md
 
-## 1. Purpose
+AUTHORITATIVE EVENT MODEL
 
-This document defines the authoritative Event Model for Arsan.
+------------------------------------------------------------
 
-Arsan follows an event-driven architecture where:
+1. PURPOSE
+
+This document defines the authoritative Event Model.
+
+The system follows strict event-driven architecture where:
 
 - Events are immutable
 - Events are append-only
-- Events are the historical source of truth
+- Events are historical source of truth
 - State is derived from events
-- Financial records are event-based
-- Cross-domain coordination uses saga patterns
+- Financial integrity is event-based
+- Cross-domain coordination uses Process Manager (Saga pattern)
 
-This document governs:
+If conflict exists with implementation:
+SYSTEM_INVARIANTS.md prevails.
 
-- Event structure
-- Event types
-- Storage rules
-- Emission rules
-- Ordering guarantees
-- Idempotency rules
-- Projection rules
-- Integrity constraints
+------------------------------------------------------------
 
----
-
-## 2. Core Event Principles
+2. CORE EVENT PRINCIPLES
 
 1. Events are immutable.
 2. Events are append-only.
-3. Events must be deterministic.
-4. Events must be tenant-aware when applicable.
-5. Events must not contain secrets.
-6. Events must represent a completed state transition.
-7. Critical business transitions must emit events.
+3. Events represent completed business transitions.
+4. Events must be deterministic.
+5. Events must be tenant-aware when applicable.
+6. Events must NOT contain secrets.
+7. Events must NOT contain derived values.
+8. Critical domain transitions MUST emit events.
 
-Any violation is considered a critical system failure.
+Violation is a critical system error.
 
----
+------------------------------------------------------------
 
-## 3. Event Storage Model
-
-All system events are stored in:
+3. EVENT STORAGE MODEL
 
 Table: system_events
 
 Columns:
 
 - id (UUID, PK)
-- aggregate_type (string)          // e.g., Order
-- aggregate_id (UUID)              // entity ID
+- aggregate_type (string)
+- aggregate_id (UUID)
 - event_type (string)
 - company_id (UUID, nullable if global)
 - actor_id (UUID)
-- version (integer)                // per aggregate version
+- version (integer, per aggregate)
 - payload (JSONB)
-- created_at (timestamp)
+- created_at (timestamp, UTC)
 
 Indexes:
 
@@ -67,16 +62,15 @@ Indexes:
 
 Rules:
 
-- No UPDATE allowed
-- No DELETE allowed
-- Append-only only
-- Version increments per aggregate
+- UPDATE forbidden
+- DELETE forbidden
+- Version increments sequentially per aggregate
+- No skipped versions
+- Optimistic locking mandatory
 
----
+------------------------------------------------------------
 
-## 4. Standard Event Envelope
-
-All events must follow this structure:
+4. STANDARD EVENT ENVELOPE
 
 {
   "eventId": "uuid",
@@ -86,243 +80,255 @@ All events must follow this structure:
   "companyId": "uuid",
   "actorId": "uuid",
   "version": 3,
-  "timestamp": "ISO8601",
+  "timestamp": "ISO8601 UTC",
   "payload": {}
 }
 
-Definitions:
+Event type names are immutable.
+Renaming event types is forbidden.
 
-- eventId → Unique identifier
-- aggregateType → Domain entity name
-- aggregateId → Entity identifier
-- eventType → Business event name
-- companyId → Tenant scope
-- actorId → User/system actor
-- version → Sequential version per aggregate
-- timestamp → Event creation time
-- payload → Event-specific structured data
+------------------------------------------------------------
 
----
+5. ORDER DOMAIN EVENTS
 
-## 5. Order Domain Events
+Order lifecycle MUST align strictly with SYSTEM_STATE_MACHINE_MATRIX.md.
 
-### 5.1 Creation
+------------------------------------------------------------
+
+5.1 Creation
 
 - ORDER_CREATED
 - PUBLIC_ORDER_CREATED
 
----
+------------------------------------------------------------
 
-### 5.2 Supplier Interaction
+5.2 Acceptance Phase
+
+Direct Order:
 
 - ORDER_ACCEPTED
-- ORDER_REJECTED
+
+Public Request Order:
+
 - OFFER_SUBMITTED
 - OFFER_SELECTED
 
 Rules:
 
-- OFFER_SELECTED locks price
-- ORDER_ACCEPTED locks price
-- Only one offer may be selected
+- OFFER_SELECTED locks price.
+- ORDER_ACCEPTED locks price.
+- For Public Request Orders:
+  ORDER_ACCEPTED MUST NOT be emitted.
+- Only one OFFER_SELECTED allowed per order.
+- Rejected offers DO NOT change order state.
 
----
+Optional non-lifecycle event:
 
-### 5.3 Preparation Phase
+- SUPPLIER_REJECTED_ORDER
+
+This event does NOT modify order state.
+
+------------------------------------------------------------
+
+5.3 Preparation Phase
 
 - ORDER_PREPARING
-- ORDER_READY_FOR_PICKUP
+- ORDER_READY
 
-State transitions must follow lifecycle rules.
+Events MUST follow lifecycle transition rules.
 
----
+------------------------------------------------------------
 
-### 5.4 Pickup (Atomic)
+5.4 Pickup (Atomic Transition)
 
-Pickup must emit, inside one transaction:
+Transition: READY → RECEIVED
 
-1. ORDER_PICKUP_VERIFIED
-2. ORDER_RECEIVED
+Single event emitted:
+
+- ORDER_RECEIVED
 
 Rules:
 
-- QR must be validated
-- Event ordering must be preserved
-- After ORDER_RECEIVED → cancellation forbidden
+- QR validation occurs inside same transaction.
+- No intermediate event allowed.
+- Cancellation permanently disabled after this event.
 
----
+------------------------------------------------------------
 
-### 5.5 Cancellation
+5.5 Cancellation
 
 - ORDER_CANCELLED
 
-Allowed only before RECEIVED.
+Allowed only before PREPARING.
+Forbidden after RECEIVED.
 
----
+------------------------------------------------------------
 
-### 5.6 Completion
+5.6 Completion
 
 - ORDER_COMPLETED
 
-Triggered when:
+Triggered ONLY by Process Manager after:
 
-- Cash closing completed
+- Cash closing confirmed
 OR
-- Debt fully paid
+- Financial balance reaches zero
 
-No transitions allowed after completion.
+Financial domain MUST NOT directly mutate order.
 
----
+------------------------------------------------------------
 
-## 6. Financial Domain Events
+6. FINANCIAL DOMAIN EVENTS
 
-Financial operations must emit system events and store immutable financial records.
+Financial domain emits events independently.
 
-Financial event types:
+Financial events:
 
 - FINANCIAL_CASH_REGISTERED
 - FINANCIAL_DEBT_REGISTERED
 - FINANCIAL_PAYMENT_REGISTERED
 - FINANCIAL_TRANSFER_REGISTERED
+- FINANCIAL_BALANCE_ZERO
 
 Rules:
 
-- financial_events table is append-only
-- No mutation allowed
-- Balance must be deterministic
-- Completion event must emit when balance reaches zero
+- financial_events table is append-only.
+- No UPDATE.
+- No DELETE.
+- Balance derived strictly from ledger events.
+- FINANCIAL_BALANCE_ZERO emitted when outstanding balance = 0.
 
----
+Process Manager listens to FINANCIAL_BALANCE_ZERO
+→ Emits ORDER_COMPLETED.
 
-## 7. Ownership Transfer Events
+------------------------------------------------------------
+
+7. OWNERSHIP TRANSFER EVENTS
 
 - OWNERSHIP_TRANSFER_REQUESTED
 - OWNERSHIP_TRANSFER_ACCEPTED
 - OWNERSHIP_TRANSFER_REJECTED
 
-Acceptance must:
+Acceptance must execute atomically:
 
-- Update order.owner_company_id
-- Insert financial TRANSFER event
+- Change ownership
+- Insert financial transfer event
 - Emit system event
-- Execute atomically
 
----
+Cross-aggregate mutation only via Process Manager.
 
-## 8. Saga / Process Manager Events
+------------------------------------------------------------
 
-Long-running workflows must emit:
+8. PROCESS MANAGER / SAGA RULES
 
-- SAGA_STARTED
-- SAGA_STEP_COMPLETED
-- SAGA_COMPLETED
-- SAGA_FAILED
+Process Manager:
 
-Saga instances must track:
+- Listens to domain events
+- Dispatches commands
+- Ensures cross-domain consistency
 
-- saga_type
-- aggregate_id
-- current_state
-- retry_count
+Internal saga state MUST NOT pollute system_events.
 
-Saga must never violate lifecycle integrity.
+Saga state stored separately in saga_instances table.
 
----
+Saga must NEVER violate lifecycle or invariants.
 
-## 9. Idempotency Rules
+------------------------------------------------------------
 
-Critical operations require idempotency:
+9. IDEMPOTENCY RULES
+
+Critical commands requiring idempotency:
 
 - Pickup
 - Financial closing
 - Payment registration
-- Ownership transfer acceptance
+- Ownership acceptance
 
-Rules:
+Implementation requirements:
 
 - Client sends Idempotency-Key
-- Server validates uniqueness
-- Duplicate processing forbidden
-- No duplicate events allowed
+- Server stores key per aggregate
+- UNIQUE(aggregate_id, idempotency_key)
+- Duplicate command MUST NOT emit new event
 
-Event emission must be exactly-once per logical action.
+Exactly one event per logical action.
 
----
+------------------------------------------------------------
 
-## 10. Event Ordering Guarantees
+10. EVENT ORDERING GUARANTEES
 
-Events must maintain strict ordering per aggregate.
-
-Rules:
-
+- Strict ordering per aggregate
 - Version increments sequentially
-- No skipped versions
-- No parallel writes for same aggregate
-- Optimistic locking enforced
+- No parallel writes
+- Optimistic concurrency enforced
 
 Out-of-order transitions forbidden.
 
----
+------------------------------------------------------------
 
-## 11. Derived State & Projections
+11. PROJECTIONS & DERIVED STATE
 
-Order state (orders.status) is a projection.
+Order.status is a projection.
 
 Authoritative source:
-
 system_events
 
-Projection rules must:
+Projection rules:
 
-- Be deterministic
-- Be rebuildable
-- Support event replay
+- Deterministic
+- Rebuildable
+- Idempotent
+- Replay-safe
 
-Replaying events must reconstruct correct state.
+Event replay MUST reconstruct identical state.
 
----
+------------------------------------------------------------
 
-## 12. Event Replay Policy
+12. EVENT REPLAY POLICY
 
 System must support:
 
-- Rebuilding projections
-- Recomputing balances
-- Auditing lifecycle transitions
+- Projection rebuild
+- Ledger recomputation
+- Full audit reconstruction
 
 Replay allowed only in controlled environments.
 
-No replay in live production without safeguards.
+Replay MUST NOT:
 
----
+- Trigger external side effects
+- Send notifications
+- Re-execute integrations
 
-## 13. Security & Data Protection
+------------------------------------------------------------
 
-Events must NOT store:
+13. SECURITY RULES
+
+Events MUST NOT contain:
 
 - Passwords
 - JWT tokens
 - Payment secrets
-- Sensitive financial credentials
+- Sensitive credentials
 
 Payload must contain minimal required data.
 
-Events are auditable records.
+Events are permanent audit artifacts.
 
----
+------------------------------------------------------------
 
-## 14. Integrity Guarantees
+14. INTEGRITY GUARANTEES
 
 The Event Model guarantees:
 
-- Immutable historical integrity
-- Deterministic lifecycle transitions
-- Financial immutability alignment
-- Tenant isolation
-- Atomic pickup enforcement
-- Safe ownership transfers
-- Reliable saga coordination
-- Strict event ordering
-- Safe idempotent operations
+- Immutable history
+- Deterministic lifecycle
+- Financial integrity alignment
+- Tenant isolation enforcement
+- Strict ordering
+- Idempotent command handling
+- Atomic pickup transition
+- Safe cross-domain coordination
 
-Any violation of immutability, ordering, or tenant isolation is a critical system error.
+Any violation of immutability, ordering, or tenant isolation
+is a critical system failure.
