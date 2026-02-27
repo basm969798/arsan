@@ -1,0 +1,205 @@
+🟢 المرحلة 1 — SaaS Core Foundation
+
+هذه المرحلة تبني "الأساس الذي يمنع أو يسمح بالتنفيذ".
+
+1️⃣ Project Scaffold
+
+NestJS project
+
+folder structure
+
+modules empty
+
+shared kernel
+
+2️⃣ Identity Domain
+
+users table
+
+password hashing
+
+JWT
+
+refresh tokens
+
+login / register
+
+email verification skeleton
+
+3️⃣ Company Domain
+
+companies table
+
+create company flow
+
+owner assignment
+
+company status enum
+
+tenant resolution middleware
+
+4️⃣ RBAC System
+
+roles
+
+permissions
+
+user_company_roles
+
+role guard
+
+5️⃣ Plan Domain
+
+plans table
+
+feature flags
+
+limits fields (configurable)
+
+6️⃣ Subscription Domain
+
+subscriptions table
+
+subscription status enum
+
+trial logic
+
+expiration logic
+
+company status enforcement middleware
+
+7️⃣ Usage Enforcement Layer
+
+check max_users
+
+check max_orders
+
+feature gating
+
+الآن انتهى SaaS Core.
+
+بدونه لا نبني أي Business Logic.
+
+🟡 المرحلة 2 — Business Engine
+
+الآن نبدأ المحرك الفعلي.
+
+8️⃣ Order Domain Skeleton
+
+order entity
+
+status enum
+
+version field
+
+basic creation flow
+
+9️⃣ State Machine Enforcement
+
+transition validation
+
+illegal transition error
+
+optimistic locking
+
+🔟 Offer / Supplier Flow
+1️⃣1️⃣ Pickup Atomic Flow
+
+QR validation
+
+transaction wrapper
+
+🔵 المرحلة 3 — Financial Engine
+1️⃣2️⃣ Financial Ledger
+
+financial_events table
+
+append-only
+
+no update rule
+
+1️⃣3️⃣ Cash Closing
+1️⃣4️⃣ Debt Registration
+1️⃣5️⃣ Partial Payment Flow
+🟣 المرحلة 4 — Ownership
+1️⃣6️⃣ Ownership Transfer Model
+
+request
+
+accept
+
+atomic update
+
+financial transfer event
+
+🟠 المرحلة 5 — Billing Layer (Provider Ready)
+1️⃣7️⃣ Invoice Model
+1️⃣8️⃣ Payment Provider Interface
+1️⃣9️⃣ Webhook Endpoint Skeleton
+🟡 المرحلة 6 — Notifications & Background Jobs
+2️⃣0️⃣ Email Queue
+2️⃣1️⃣ Scheduler (trial expiry, grace, override expiry)
+🧱 المرحلة 7 — Platform Admin
+2️⃣2️⃣ Admin Module
+
+suspend company
+
+override subscription
+
+change plan
+
+audit logs
+
+🧠 لماذا هذا الترتيب هو الصحيح فعليًا؟
+
+لأن:
+
+Order يعتمد على Company
+
+Company يعتمد على Identity
+
+Subscription يعتمد على Company
+
+Usage يعتمد على Subscription
+
+Financial يعتمد على Order
+
+Billing يعتمد على Subscription
+
+Notifications تعتمد على كل شيء
+
+إذا بدأت بـ Order قبل Subscription
+ستعيد كل شيء.
+
+🔥 ما الذي لا نبنيه الآن؟
+
+Ranking
+
+Analytics
+
+Advanced metrics
+
+Optimization
+
+UI polish
+
+🏁 الخلاصة النهائية
+
+ترتيب البناء الصحيح هو:
+
+1  Scaffold
+2  Identity
+3  Company
+4  RBAC
+5  Plan
+6  Subscription
+7  Usage Enforcement
+8  Order
+9  State Machine
+10 Financial
+11 Ownership
+12 Billing Abstraction
+13 Notifications
+14 Admin
+
+هذا هو الترتيب الصحيح هندسيًا.
