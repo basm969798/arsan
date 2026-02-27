@@ -1,1 +1,41 @@
-body { margin: 0; background: #f8f9fa; font-family: sans-serif; direction: rtl; }
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
+
+:root {
+  --primary: #0f172a;
+  --accent: #3b82f6;
+  --bg: #f8fafc;
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+  --success: #10b981;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Cairo', sans-serif !important;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-main);
+  margin: 0;
+  direction: rtl;
+}
+
+input, select, textarea {
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.3s ease !important;
+}
+
+input:focus, select:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+  outline: none;
+}
+
+button {
+  transition: transform 0.2s, opacity 0.2s !important;
+}
+
+button:active {
+  transform: scale(0.98);
+}

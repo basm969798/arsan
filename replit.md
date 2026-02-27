@@ -1,8 +1,8 @@
-# Arsan - B2B Multi-Tenant SaaS Platform
+# Arsan (أرصن) - B2B Multi-Tenant SaaS Platform
 
 ## Overview
 
-Arsan is a B2B multi-tenant SaaS platform for auto parts trading. It connects traders (merchants) with suppliers, enabling catalog browsing, direct orders, public bid requests, and order lifecycle management including QR-based delivery confirmation and financial closure.
+Arsan (أرصن) is a B2B multi-tenant SaaS platform for auto parts trading. It connects traders (merchants) with suppliers, enabling catalog browsing, direct orders, public bid requests, and order lifecycle management including QR-based delivery confirmation and financial closure.
 
 The project uses a monorepo structure with a **NestJS backend** (API-first, single source of truth) and a **Next.js frontend** (presentation only). The backend follows Clean Architecture with four layers: API, Application, Domain, and Infrastructure. Multi-tenancy is achieved via a shared database with a `company_id` tenant identifier on all tenant-scoped entities.
 
