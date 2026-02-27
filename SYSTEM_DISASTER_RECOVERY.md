@@ -1,307 +1,245 @@
-# Arsan — Official Disaster Recovery Plan (Final)
+# SYSTEM_DISASTER_RECOVERY.md
+Authoritative Disaster Recovery Plan (Architecture-Frozen)
 
-## 1. Purpose
+------------------------------------------------------------
 
-This document defines the Disaster Recovery (DR) strategy for Arsan.
+1. PURPOSE
 
-It ensures:
+Defines disaster recovery strategy ensuring:
 
 - Business continuity
-- Data integrity
-- Financial immutability preservation
-- Event history protection
-- Multi-tenant isolation safety
-- Fast system restoration
-- Controlled incident handling
+- Event store integrity
+- Financial ledger immutability
+- Tenant isolation preservation
+- Deterministic state reconstruction
+- Controlled recovery procedures
 
-Disaster recovery is mandatory for production readiness.
+If conflict exists:
+SYSTEM_INVARIANTS.md prevails.
 
----
+------------------------------------------------------------
 
-## 2. Disaster Recovery Objectives
+2. RECOVERY OBJECTIVES
 
-### RTO — Recovery Time Objective
-Maximum acceptable downtime:
+RTO (Recovery Time Objective):
 ≤ 2 hours
 
-### RPO — Recovery Point Objective
-Maximum acceptable data loss:
+RPO (Recovery Point Objective):
 ≤ 15 minutes
 
-Financial and event data must not be corrupted.
+To satisfy RPO:
+PostgreSQL WAL archiving MUST be enabled.
 
----
+------------------------------------------------------------
 
-## 3. Disaster Scenarios Covered
+3. BACKUP STRATEGY
 
-The plan covers:
+3.1 Continuous Backup (Mandatory)
 
-1. Server crash
-2. Database corruption
-3. Accidental data deletion
-4. Container misconfiguration
-5. Region-wide outage
-6. Network failure
-7. Storage disk failure
-8. Security breach containment
+- Enable PostgreSQL WAL archiving
+- Store WAL logs off-server
+- Enable Point-In-Time Recovery (PITR)
 
----
+3.2 Daily Full Backup
 
-## 4. System Components to Protect
-
-Critical components:
-
-- PostgreSQL database
-- system_events table
-- financial_events table
-- Docker images
-- Environment configuration
-- SSL certificates
-- Nginx configuration
-- Redis configuration (non-authoritative)
-
-Redis is not a source of truth.
-Database is authoritative.
-
----
-
-## 5. Backup Strategy
-
-### 5.1 PostgreSQL Backup
-
-Daily full backup:
-- pg_dump
-- Stored outside Docker containers
-- Stored on separate volume
+- pg_dump full database
 - Encrypted
+- Stored off-server
+- Separate storage provider recommended
 
-Retention policy:
-- 7 daily backups
-- 4 weekly backups
-- 3 monthly backups
+Retention:
 
-Backup must include:
-- All schemas
+- 7 daily
+- 4 weekly
+- 3 monthly
+
+Backups must include:
+
 - system_events
 - financial_events
-- All tenant data
+- saga_instances
+- migration history
+- all tenant data
 
----
+Partial backups forbidden.
 
-### 5.2 Redis Backup
+------------------------------------------------------------
 
-Redis used for:
-- Cache
-- Idempotency keys
-- Temporary locks
+4. REDIS POLICY
 
-Redis data does NOT require full restoration.
-Can be rebuilt safely.
+Redis is non-authoritative.
 
----
+After recovery:
 
-### 5.3 Configuration Backup
+- Cache rebuilt automatically
+- Idempotency keys restored from DB
+- Temporary locks reset
 
-Backup includes:
+Redis backup optional.
 
-- docker-compose.yml
-- .env.production
-- Nginx SSL configs
-- CI/CD scripts
+------------------------------------------------------------
 
-Secrets must be stored securely and separately.
+5. RECOVERY MODES
 
----
+System must support:
 
-## 6. Backup Storage Rules
+Maintenance Mode:
 
-Backups must:
+- Disable write endpoints
+- Disable financial commands
+- Disable Process Manager execution
+- Allow read-only access if safe
 
-- Be encrypted at rest
-- Be stored off-server
-- Not be publicly accessible
-- Be tested monthly
+Recovery mode MUST be activated before restore.
 
-Access must be restricted to authorized admins only.
+------------------------------------------------------------
 
----
-
-## 7. Recovery Procedures
-
-### 7.1 Server Crash Recovery
+6. SERVER CRASH RECOVERY
 
 Steps:
 
-1. Provision new Ubuntu 22.04 server
-2. Install Docker & Docker Compose
-3. Restore docker-compose.yml
-4. Restore environment variables
-5. Restore PostgreSQL from latest backup
-6. Start containers
-7. Verify health endpoints
-8. Validate tenant isolation
-9. Validate financial integrity
+1. Provision new server
+2. Install Docker
+3. Restore configs
+4. Restore PostgreSQL (PITR if required)
+5. Start services in maintenance mode
+6. Run integrity checks
+7. Rebuild projections
+8. Validate financial reconciliation
+9. Exit maintenance mode
 
----
+------------------------------------------------------------
 
-### 7.2 Database Corruption Recovery
+7. DATABASE CORRUPTION RECOVERY
 
-Steps:
+1. Stop backend
+2. Restore DB using PITR
+3. Validate:
 
-1. Stop backend container
-2. Restore database from latest valid backup
-3. Verify integrity of:
-   - orders
-   - financial_events
-   - system_events
-4. Restart backend
-5. Validate projections
+   - No duplicate aggregate versions
+   - No version gaps
+   - Event ordering intact
+   - Financial ledger consistency
 
----
+4. Rebuild projections
+5. Restart backend
 
-### 7.3 Region Failure (Major Outage)
+------------------------------------------------------------
+
+8. EVENT STORE VALIDATION
+
+After restore:
+
+- Verify UNIQUE(aggregate_id, version)
+- Detect missing versions
+- Replay events in isolated mode
+- Confirm projection rebuild success
+
+Replay must:
+
+- Not emit new events
+- Not trigger notifications
+- Not call external integrations
+
+------------------------------------------------------------
+
+9. FINANCIAL LEDGER VALIDATION
+
+After restore:
+
+- Recompute outstanding balances
+- Detect negative balances
+- Ensure no completed order without settlement
+- Verify no orphan financial events
+- Confirm no duplicate events
+
+Reconciliation script mandatory.
+
+------------------------------------------------------------
+
+10. REGION FAILURE
 
 If primary region unavailable:
 
-1. Deploy system in secondary region
-2. Restore latest offsite backup
-3. Update DNS records
-4. Validate SSL
-5. Verify health
-6. Monitor traffic
+1. Deploy to secondary region
+2. Restore latest offsite backup (with WAL replay)
+3. Activate maintenance mode
+4. Validate integrity
+5. Switch DNS
+6. Exit maintenance mode
 
-Downtime target ≤ RTO.
+------------------------------------------------------------
 
----
-
-## 8. Financial Integrity Validation
-
-After restoration, must verify:
-
-- No duplicate financial_events
-- No missing financial_events
-- Balance recomputation equals stored projections
-- No negative balances
-- No completed order without financial closure
-
-Run reconciliation script post-recovery.
-
----
-
-## 9. Event Store Integrity Validation
-
-After restoration:
-
-- Ensure event ordering intact
-- No version gaps
-- No duplicate aggregate version
-- Projection rebuild test must pass
-
-Event replay must produce consistent state.
-
----
-
-## 10. Security Incident Containment
+11. SECURITY INCIDENT RESPONSE
 
 If breach suspected:
 
-1. Immediately rotate JWT_SECRET
-2. Rotate database credentials
-3. Rotate Redis credentials
-4. Invalidate all active tokens
-5. Review audit logs
-6. Isolate affected tenants if required
+1. Enter maintenance mode
+2. Rotate JWT_SECRET
+3. Rotate DB credentials
+4. Rotate Redis credentials
+5. Invalidate tokens
+6. Preserve logs for forensic audit
+7. Validate event and financial immutability
 
-Never modify financial history.
+Never modify event or financial history.
 
----
+------------------------------------------------------------
 
-## 11. Deployment Rollback Strategy
+12. DEPLOYMENT ROLLBACK
 
-If deployment failure occurs:
+If deployment fails:
 
 1. Stop new container
-2. Restart previous stable image
-3. Verify health
-4. Confirm DB schema compatibility
-5. Monitor logs
+2. Restore previous image
+3. Confirm DB schema compatibility
+4. Validate integrity checks
 
-Blue-Green or Rolling restart recommended.
+Schema downgrade must never rewrite event history.
 
----
+------------------------------------------------------------
 
-## 12. Monitoring During Recovery
+13. RECOVERY TESTING POLICY
 
-Must monitor:
+Test every 30 days:
 
-- CPU usage
-- Memory usage
-- DB connection count
-- Error rate
-- API latency
-- Failed login attempts
+- Restore from backup
+- Perform PITR
+- Rebuild projections
+- Validate ledger reconciliation
+- Validate tenant isolation
+- Validate authorization enforcement
 
-System must remain stable before reopening public access.
+Test must simulate real outage.
 
----
+------------------------------------------------------------
 
-## 13. Recovery Testing Policy
-
-Disaster recovery must be tested:
-
-- Every 30 days (restore test)
-- After major schema changes
-- After infrastructure migration
-
-Test must confirm:
-
-- Data restoration success
-- Financial integrity
-- Event replay integrity
-- Tenant isolation preserved
-
----
-
-## 14. What Must Never Be Done
+14. PROHIBITED ACTIONS
 
 Never:
 
-- Manually edit financial_events
-- Rewrite system_events
-- Modify balances directly
-- Skip integrity checks
-- Restore partial event logs
-- Ignore version mismatches
+- Modify financial_events
+- Modify system_events
+- Restore partial event history
+- Skip version validation
+- Disable integrity checks
+- Bypass maintenance mode during restore
 
-Financial and event data are immutable.
+Immutable data is sacred.
 
----
+------------------------------------------------------------
 
-## 15. Communication Plan
+FINAL DISASTER RECOVERY GUARANTEE
 
-During major outage:
+This DR strategy guarantees:
 
-1. Notify internal team immediately
-2. Log incident start time
-3. Communicate estimated recovery time
-4. Confirm recovery
-5. Document incident report
+- Event history preservation
+- Financial ledger immutability
+- Tenant isolation integrity
+- Deterministic system restoration
+- Controlled recovery execution
+- Secure breach containment
+- Predictable downtime
 
-Post-incident review required.
-
----
-
-## Final Disaster Recovery Guarantee
-
-This Disaster Recovery Plan guarantees:
-
-- Business continuity
-- Financial immutability preservation
-- Event history integrity
-- Multi-tenant isolation safety
-- Controlled rollback
-- Secure restoration
-- Predictable recovery time
-- Production-grade resilience
-
-Disaster recovery discipline is mandatory for production trust.
+Disaster recovery protects trust.
+Trust protects the system.
