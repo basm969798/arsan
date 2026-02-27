@@ -6,7 +6,7 @@ function getBaseURL() {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:8080';
     }
-    return `https://${hostname.replace('-5000', '-8080')}`;
+    return '/api';
   }
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 }

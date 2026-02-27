@@ -20,13 +20,15 @@ export default function DashboardPage() {
           apiClient.get('/catalog').catch(() => ({ data: [] }))
         ]);
 
-        const activeOrders = (ordersRes.data || []).filter(
-          (order: any) => !['COMPLETED', 'REJECTED', 'CANCELLED'].includes(order.status)
+        const ordersData = Array.isArray(ordersRes.data) ? ordersRes.data : [];
+        const catalogData = Array.isArray(catalogRes.data) ? catalogRes.data : [];
+        const activeOrders = ordersData.filter(
+          (order: any) => order && !['COMPLETED', 'REJECTED', 'CANCELLED'].includes(order.status)
         );
 
         setStats({
           activeOrdersCount: activeOrders.length,
-          catalogCount: catalogRes.data.length || 0
+          catalogCount: catalogData.length
         });
       } catch (error) {
         console.error('Failed to load stats', error);
