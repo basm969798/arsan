@@ -1,9 +1,18 @@
 import axios from 'axios';
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+function getBaseURL() {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:8080';
+    }
+    return `https://${hostname.replace('-5000', '-8080')}`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+}
 
 export const apiClient = axios.create({
-  baseURL,
+  baseURL: getBaseURL(),
   headers: {
     'Content-Type': 'application/json',
   },
@@ -26,7 +35,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      console.warn('⚠️ الجلسة انتهت. يجب تسجيل الدخول مجدداً.');
+      console.warn('الجلسة انتهت. يجب تسجيل الدخول مجددا.');
     }
     return Promise.reject(error);
   }

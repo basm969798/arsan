@@ -13,7 +13,7 @@ async function bootstrap() {
   }));
 
   app.useGlobalFilters(new GlobalExceptionFilter());
-  app.enableCors();
+  app.enableCors({ origin: true, credentials: true });
 
   const port = process.env.PORT || 8080;
   await app.listen(port, '0.0.0.0');
