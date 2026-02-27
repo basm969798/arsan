@@ -1,192 +1,253 @@
-# Authorization Strategy
+# SYSTEM_AUTHORIZATION.md
+Authoritative Authorization Model (Architecture-Frozen)
 
-## Overview
+------------------------------------------------------------
 
-This document defines the official authorization model for the Arsan platform.
+1. PURPOSE
 
-Arsan is a multi-tenant SaaS system where:
+This document defines the authoritative authorization model.
 
-* Multiple companies (tenants) coexist
-* Users belong to companies
-* Access must be strictly scoped per tenant
+It governs:
 
-Authentication verifies identity.
-Authorization controls access.
+- Tenant-scoped access control
+- Role and permission enforcement
+- Lifecycle-aware access validation
+- Financial operation restrictions
+- Super Admin boundaries
+- Domain-layer enforcement rules
 
-This document defines authorization only.
+If conflict exists:
+SYSTEM_INVARIANTS.md prevails.
 
----
+Authorization violations are critical security failures.
 
-## Authorization Model
+------------------------------------------------------------
 
-Arsan uses a **Tenant-Scoped Role-Based Access Control (RBAC)** model.
+2. AUTHORIZATION MODEL
 
-Core principles:
+Arsan uses Tenant-Scoped Role-Based Access Control (RBAC).
 
-* Users are assigned roles.
-* Roles contain permissions.
-* Roles are scoped per company (tenant).
-* Authorization decisions are tenant-aware.
+Core model:
 
----
+Authorization decision =
+(user_id, company_id, permission, resource_owner_company_id, lifecycle_state)
 
-## Key Concepts
+Authorization MUST validate:
 
-### User
+1. Identity (authenticated user)
+2. Tenant context
+3. Role-to-permission mapping
+4. Resource ownership
+5. Lifecycle state (when applicable)
 
-Represents an authenticated identity.
+All five dimensions are mandatory.
 
-A user may:
+------------------------------------------------------------
 
-* Belong to one company
-* Or belong to multiple companies (future support)
+3. TENANT ISOLATION ENFORCEMENT
 
----
+Tenant validation MUST occur BEFORE data fetch.
 
-### Company (Tenant)
+Rules:
 
-Defines the isolation boundary.
+- Every resource query MUST include company_id filter.
+- Resource.company_id MUST equal current tenant context.
+- Cross-tenant access is forbidden.
+- Authorization check must fail before returning data.
 
-Authorization decisions must always consider:
+No "fetch then validate" pattern allowed.
 
-```id="u82kdi"
-user + company_id + role
-```
+------------------------------------------------------------
 
----
+4. ROLE & PERMISSION MODEL
 
-### Role
+Roles:
 
-Represents a collection of permissions.
+- Assigned per company.
+- Map to system-defined permissions.
+- Role names MUST NOT be used in business logic.
+
+Authorization MUST depend only on permissions,
+never on role names.
+
+Example permissions:
+
+- orders.create
+- orders.accept
+- orders.prepare
+- orders.cancel
+- orders.read
+- financial.register_cash
+- financial.register_debt
+- financial.register_payment
+- ownership.transfer.request
+- ownership.transfer.accept
+- catalog.edit
+- users.manage
+
+Permission registry is global and version-controlled.
+
+------------------------------------------------------------
+
+5. DOMAIN-LAYER ENFORCEMENT
+
+Authorization MUST be enforced at:
+
+- API layer (guard/policy)
+- Domain command layer
+
+Domain commands MUST validate:
+
+- Permission
+- Tenant context
+- Lifecycle state
+
+No command may execute without authorization validation.
+
+Hardcoded permission bypass inside domain logic is forbidden.
+
+------------------------------------------------------------
+
+6. LIFECYCLE-AWARE AUTHORIZATION
+
+Permission alone is insufficient.
+
+Authorization MUST also validate lifecycle state.
 
 Examples:
 
-* Owner
-* Admin
-* Manager
-* Operator
-* Viewer
+- orders.cancel allowed only before PREPARING.
+- financial.register_debt allowed only after RECEIVED.
+- financial.register_payment allowed only if outstanding balance > 0.
+- ownership.transfer.accept forbidden after COMPLETED.
 
-Roles are tenant-specific.
+Lifecycle validation MUST align with SYSTEM_STATE_MACHINE_MATRIX.md.
 
-Two different companies may define roles with similar names but they are isolated.
+------------------------------------------------------------
 
----
+7. FINANCIAL AUTHORIZATION RULES
 
-### Permission
+Financial operations require strict validation.
 
-Represents a granular action.
+Rules:
 
-Examples:
+- Financial actions forbidden before ORDER_RECEIVED.
+- Financial actions forbidden after ORDER_COMPLETED.
+- Overpayment attempts must be rejected.
+- Financial domain cannot mutate Order directly.
 
-* orders.create
-* orders.read
-* orders.update
-* vehicles.manage
-* catalog.edit
-* users.invite
+Super Admin cannot bypass:
 
-Permissions are system-defined and global.
+- Financial immutability
+- Ledger integrity
+- Balance rules
 
-Roles map to permissions.
+------------------------------------------------------------
 
----
+8. SUPER ADMIN MODEL
 
-## Authorization Scope
-
-Authorization must enforce:
-
-1. Tenant Isolation
-   Users cannot access data from another company.
-
-2. Role Validation
-   Users can only perform actions granted by their role.
-
-3. Resource Ownership
-   Access must match company_id of resource.
-
----
-
-## Enforcement Strategy
-
-Authorization must be enforced at:
-
-* Application Layer
-* Guard/Policy Layer (API layer)
-
-Never rely on frontend validation.
-
----
-
-## Super Admin (System-Level Role)
-
-The system may include a global role:
-
-* Super Admin
+Super Admin is a system-level role.
 
 Capabilities:
 
-* Manage companies
-* View system-level data
+- View cross-tenant data
+- Manage companies
+- Manage user assignments
 
-Super Admin must bypass tenant restrictions intentionally and explicitly.
+Super Admin limitations:
 
-This role must not be mixed with tenant roles.
+- Cannot modify immutable events.
+- Cannot modify financial ledger entries.
+- Cannot override lifecycle transitions.
+- Cannot reopen completed orders.
+- Cannot bypass invariants.
 
----
+Super Admin bypass is limited to visibility and tenant access only.
 
-## Role Assignment Rules
+------------------------------------------------------------
 
-* A user must have at least one role per company.
-* Role assignment must be auditable.
-* Role modification must require elevated permissions.
+9. RESOURCE OWNERSHIP VALIDATION
 
----
+Authorization MUST validate:
 
-## Default Role Policy
+resource.company_id == current tenant context
 
-When a company is created:
+For ownership transfer:
 
-* Owner role is automatically assigned to creator.
-* Default roles may be pre-seeded.
+- Request must originate from current owner.
+- Acceptance must be performed by target company.
+- Ownership update must be event-driven.
 
----
+Cross-aggregate mutation without Process Manager is forbidden.
 
-## Forbidden Practices
+------------------------------------------------------------
 
-The following are strictly prohibited:
+10. IDEMPOTENCY & AUTHORIZATION
 
-* Hardcoded role checks inside business logic.
-* Role name string comparisons in domain logic.
-* Authorization logic inside controllers.
-* Bypassing tenant scoping for convenience.
+Idempotent commands MUST revalidate authorization on retry.
 
----
+Rules:
 
-## Future Evolution
+- Idempotency does NOT bypass permission checks.
+- Role changes must affect future retries.
+- Duplicate command execution forbidden even if authorized.
 
-The authorization model may evolve to include:
+------------------------------------------------------------
 
-* Attribute-Based Access Control (ABAC)
-* Resource-level permissions
-* Policy engine integration
+11. ROLE ASSIGNMENT RULES
 
-Any change must update this document.
+- User must have at least one role per company.
+- Role assignment changes must be auditable.
+- Role modification requires users.manage permission.
+- Owner role automatically assigned at company creation.
 
----
+Role assignments are tenant-scoped.
 
-## Summary
+------------------------------------------------------------
 
-Arsan uses:
+12. FORBIDDEN PRACTICES
 
-* Tenant-scoped RBAC
-* Role-to-permission mapping
-* Strict tenant isolation
+The system strictly forbids:
 
-Authorization must always consider:
+- Hardcoded role-name checks.
+- Authorization inside frontend only.
+- Bypassing tenant filter for convenience.
+- Skipping lifecycle validation.
+- Mixing Super Admin with tenant roles.
+- Direct permission checks inside data layer.
+- Fetching resource before tenant validation.
 
-* Identity
-* Role
-* Tenant context
+Violations are critical security issues.
 
-Violations of these rules are considered critical security issues.
+------------------------------------------------------------
+
+13. FUTURE EXTENSIBILITY
+
+Future models may include:
+
+- Attribute-Based Access Control (ABAC)
+- Resource-level policies
+- External policy engines
+
+Any evolution must preserve:
+
+- Tenant isolation
+- Financial immutability
+- Lifecycle enforcement
+- Deterministic authorization logic
+
+------------------------------------------------------------
+
+FINAL AUTHORIZATION GUARANTEE
+
+This authorization model guarantees:
+
+- Strict tenant isolation
+- Permission-based enforcement
+- Lifecycle-aware access control
+- Financial protection
+- Immutable event safety
+- Domain-layer validation
+- Super Admin containment
+
+Authorization is mandatory at every command boundary.
