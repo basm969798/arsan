@@ -1,93 +1,97 @@
-# Arsan — Official API Contract (Final)
+# Arsan — Official API Contract (Architecture-Frozen)
 
-## 1. Purpose
+------------------------------------------------------------
 
-This document defines the authoritative API contract for Arsan.
+1. PURPOSE
+
+This document defines the authoritative public API contract.
 
 It governs:
 
 - Endpoint structure
 - Versioning
 - Authentication
-- Authorization
-- Multi-tenant enforcement
-- Lifecycle integrity
+- Authorization mapping
+- Tenant isolation
+- Lifecycle enforcement
 - Financial immutability
 - Atomic operations
 - Idempotency
-- Error standards
+- Error model
 - Backward compatibility
 
-The API is the only public interface to the system.
-Direct database access is strictly forbidden.
+If conflict exists:
+SYSTEM_INVARIANTS.md prevails.
 
----
+The API is the ONLY public interface.
+Direct database access is forbidden.
 
-## 2. API Principles
+------------------------------------------------------------
 
-1. API-First architecture
+2. CORE API PRINCIPLES
+
+1. API-first architecture
 2. Versioned endpoints only
 3. Tenant-aware by default
-4. Deterministic state transitions
-5. No hidden side-effects
-6. Append-only financial operations
-7. Idempotent critical endpoints
-8. Backward compatibility guaranteed
+4. No hidden side effects
+5. Deterministic transitions
+6. Financial operations are append-only
+7. Critical endpoints are idempotent
+8. No endpoint directly mutates derived state
+9. Cross-aggregate effects handled via Process Manager
 
----
+------------------------------------------------------------
 
-## 3. Base URL Structure
-
-All endpoints MUST follow:
+3. BASE URL STRUCTURE
 
 /api/v1/{resource}
 
-Future breaking changes:
-
-/api/v2/{resource}
+Breaking change:
+→ /api/v2/{resource}
 
 Unversioned endpoints are forbidden.
 
----
+------------------------------------------------------------
 
-## 4. Authentication
+4. AUTHENTICATION
 
-Authentication method:
+Method:
 JWT Bearer Token
 
 Header:
 Authorization: Bearer <token>
 
-Token payload must contain:
+Token MUST include:
+
 - user_id
 - active_company_id
-- roles
 - issued_at
 - expiration
 
-Missing or invalid token → 401 Unauthorized
-Expired token → 401 Unauthorized
+Roles MUST NOT be trusted from token.
+Roles resolved server-side.
 
----
+Invalid or expired token → 401 Unauthorized
 
-## 5. Multi-Tenant Enforcement
+------------------------------------------------------------
 
-Every request resolves:
+5. TENANT RESOLUTION
 
 currentTenant = token.active_company_id
 
-Server must enforce:
-- company_id scoping
-- ownership validation
-- role-based authorization
+Server MUST:
+
+- Validate tenant context BEFORE data fetch
+- Scope all queries by company_id
+- Validate resource ownership
 
 Cross-tenant access → 403 Forbidden
 
----
+------------------------------------------------------------
 
-## 6. Standard Response Format
+6. STANDARD RESPONSE FORMAT
 
-### Success Response
+Success:
 
 {
   "success": true,
@@ -98,7 +102,7 @@ Cross-tenant access → 403 Forbidden
   }
 }
 
-### Error Response
+Error:
 
 {
   "success": false,
@@ -112,276 +116,273 @@ Cross-tenant access → 403 Forbidden
   }
 }
 
-Internal stack traces must NEVER be exposed.
+Stack traces MUST NEVER be exposed.
 
----
+------------------------------------------------------------
 
-## 7. HTTP Status Code Policy
+7. HTTP STATUS POLICY
 
-200  → Success  
-201  → Created  
-204  → No Content  
-400  → Validation Error  
-401  → Unauthorized  
-403  → Forbidden  
-404  → Not Found  
-409  → Invalid State Transition  
-422  → Business Rule Violation  
-429  → Rate Limited  
-500  → Internal Error  
+200 → Success  
+201 → Created  
+202 → Accepted (async processing)  
+204 → No Content  
+400 → Validation Error  
+401 → Unauthorized  
+403 → Forbidden  
+404 → Not Found  
+409 → Invalid State Transition  
+422 → Business Rule Violation  
+429 → Rate Limited  
+500 → Internal Error  
 
----
+------------------------------------------------------------
 
-## 8. Orders API
+8. ORDERS API
 
-### Create Order
+------------------------------------------------------------
+8.1 Create Order
 
 POST /api/v1/orders
-
-Body:
-
-{
-  "orderType": "DIRECT | PUBLIC",
-  "supplierCompanyId": "uuid (required if DIRECT)",
-  "items": [
-    {
-      "productId": "uuid",
-      "quantity": 10
-    }
-  ]
-}
+Permission: orders.create
 
 Initial status:
-DIRECT → WAITING_FOR_SUPPLIER  
-PUBLIC → NEW  
+DIRECT → WAITING_FOR_SUPPLIER
+PUBLIC → NEW
 
----
-
-### Accept Order (Supplier Only)
+------------------------------------------------------------
+8.2 Accept Order (Supplier Only)
 
 POST /api/v1/orders/{orderId}/accept
+Permission: orders.accept
 
-Rules:
-- Only supplier
-- Only when status = WAITING_FOR_SUPPLIER
-- Locks price
-- Moves to ACCEPTED
+Allowed only:
+status = WAITING_FOR_SUPPLIER
 
-Invalid state → 409 Conflict
+Effect:
+Emit ORDER_ACCEPTED
 
----
-
-### Submit Offer (Public Orders)
+------------------------------------------------------------
+8.3 Submit Offer (Public Only)
 
 POST /api/v1/orders/{orderId}/offers
+Permission: orders.offer.submit
 
-Allowed only when status = NEW
+Allowed only:
+status = NEW
 
----
-
-### Select Offer
+------------------------------------------------------------
+8.4 Select Offer
 
 POST /api/v1/orders/{orderId}/offers/{offerId}/select
+Permission: orders.offer.select
 
-Rules:
-- Only trader
-- Locks price
-- Sets supplier_company_id
-- Moves to ACCEPTED
-- Only one offer allowed
+Effect:
+Emit OFFER_SELECTED
+Lock price
+Set supplier_company_id
 
----
-
-### Move to Preparing
+------------------------------------------------------------
+8.5 Move to Preparing
 
 POST /api/v1/orders/{orderId}/prepare
+Permission: orders.prepare
 
-Allowed only when status = ACCEPTED  
-Moves to PREPARING
+Allowed only:
+status = ACCEPTED
 
----
+Emit ORDER_PREPARING
 
-### Ready for Pickup
+------------------------------------------------------------
+8.6 Ready for Pickup
 
 POST /api/v1/orders/{orderId}/ready
+Permission: orders.ready
 
-Allowed only when status = PREPARING  
-Moves to READY_FOR_PICKUP
+Allowed only:
+status = PREPARING
 
----
+Emit ORDER_READY
 
-### Pickup (Atomic Operation)
+------------------------------------------------------------
+8.7 Pickup (Atomic)
 
 POST /api/v1/orders/{orderId}/pickup
+Permission: orders.pickup
+Header: Idempotency-Key
 
-Header:
-Idempotency-Key: unique-key
+Server must atomically:
 
-Body:
-{
-  "qrCode": "string"
-}
-
-Server must:
-- Verify QR
+- Validate QR
 - Insert order_pickup
-- Change state to RECEIVED
-- Commit transaction atomically
+- Emit ORDER_RECEIVED
+- Commit transaction
 
-After RECEIVED:
+Returns:
+200 Success
+
+After ORDER_RECEIVED:
 - Cancellation forbidden
-- Financial closing enabled
+- Financial phase enabled
 
----
-
-### Financial Closing
-
-POST /api/v1/orders/{orderId}/close
-
-Header:
-Idempotency-Key: unique-key
-
-Body:
-{
-  "method": "CASH | DEBT"
-}
-
-Rules:
-- Only after RECEIVED
-- Creates financial event
-- If CASH → status → COMPLETED
-- If DEBT → remains open until balance = 0
-
----
-
-### Register Payment (Debt Only)
-
-POST /api/v1/orders/{orderId}/payments
-
-Header:
-Idempotency-Key: unique-key
-
-Body:
-{
-  "amount": 100
-}
-
-Rules:
-- Append-only financial event
-- If balance_after = 0 → status → COMPLETED
-
----
-
-### Cancel Order
+------------------------------------------------------------
+8.8 Cancel Order
 
 POST /api/v1/orders/{orderId}/cancel
+Permission: orders.cancel
 
-Allowed:
-- Before ACCEPTED
-- After ACCEPTED but before RECEIVED
+Allowed only when:
 
-Forbidden:
-- After RECEIVED
+- NEW
+- WAITING_FOR_SUPPLIER
+- ACCEPTED (before PREPARING)
 
----
+Forbidden after PREPARING.
 
-## 9. Ownership Transfer API
+Emit ORDER_CANCELLED
 
-### Request Transfer
+------------------------------------------------------------
+
+9. FINANCIAL API
+
+------------------------------------------------------------
+9.1 Register Cash
+
+POST /api/v1/orders/{orderId}/financial/cash
+Permission: financial.register_cash
+Header: Idempotency-Key
+
+Allowed only after:
+ORDER_RECEIVED
+
+Effect:
+Emit FINANCIAL_CASH_REGISTERED
+Emit FINANCIAL_BALANCE_ZERO
+
+Process Manager:
+→ Emits ORDER_COMPLETED
+
+Response:
+202 Accepted
+
+------------------------------------------------------------
+9.2 Register Debt
+
+POST /api/v1/orders/{orderId}/financial/debt
+Permission: financial.register_debt
+Header: Idempotency-Key
+
+Allowed only after:
+ORDER_RECEIVED
+
+Emit FINANCIAL_DEBT_REGISTERED
+
+Response:
+200 Success
+
+------------------------------------------------------------
+9.3 Register Payment
+
+POST /api/v1/orders/{orderId}/financial/payments
+Permission: financial.register_payment
+Header: Idempotency-Key
+
+Rules:
+
+- amount > 0
+- amount ≤ outstanding balance (derived)
+
+Emit FINANCIAL_PAYMENT_REGISTERED
+
+If outstanding = 0:
+Emit FINANCIAL_BALANCE_ZERO
+Process Manager emits ORDER_COMPLETED
+
+Response:
+200 Success
+If completion triggered:
+202 Accepted
+
+------------------------------------------------------------
+
+10. OWNERSHIP TRANSFER API
+
+------------------------------------------------------------
+10.1 Request Transfer
 
 POST /api/v1/orders/{orderId}/transfer
+Permission: ownership.transfer.request
 
-Creates transfer request.
+Emit OWNERSHIP_TRANSFER_REQUESTED
 
----
-
-### Accept Transfer
+------------------------------------------------------------
+10.2 Accept Transfer
 
 POST /api/v1/orders/{orderId}/transfer/accept
+Permission: ownership.transfer.accept
+Header: Idempotency-Key
 
-Header:
-Idempotency-Key: unique-key
+Atomically:
 
-Must:
-- Update owner_company_id
-- Create TRANSFER financial event
-- Log system event
-- Execute atomically
+- Emit OWNERSHIP_TRANSFER_ACCEPTED
+- Emit FINANCIAL_TRANSFER_REGISTERED
 
----
+Process Manager updates projection owner_company_id
 
-## 10. Idempotency Policy
+Response:
+202 Accepted
+
+------------------------------------------------------------
+
+11. IDEMPOTENCY POLICY
 
 Required for:
+
 - Pickup
-- Financial closing
+- Cash registration
+- Debt registration
 - Payment
 - Transfer acceptance
 
-Client sends:
-Idempotency-Key: UUID
+Rules:
 
-Server must:
-- Store key
-- Reject duplicate processing
-- Return identical response for repeated request
+- Client sends Idempotency-Key
+- Server stores key per aggregate
+- Duplicate request returns identical response body
+- New requestId generated per HTTP call
+- No duplicate event emission allowed
 
----
+------------------------------------------------------------
 
-## 11. Rate Limiting
+12. STATE TRANSITION PROTECTION
 
-Default:
-100 requests / minute / IP
+Server MUST validate:
 
-Exceeded → 429 Too Many Requests
-
----
-
-## 12. Pagination Standard
-
-Query:
-?page=1&limit=20
-
-Response:
-
-{
-  "success": true,
-  "data": [],
-  "meta": {
-    "page": 1,
-    "limit": 20,
-    "total": 500
-  }
-}
-
----
-
-## 13. State Transition Protection
-
-Server must validate:
 - No skipping states
-- No transition after final state
-- No illegal lifecycle changes
+- No illegal transitions
+- No mutation after final state
+- No financial before RECEIVED
+- No lifecycle bypass
 
 Invalid transition → 409 Conflict
 
----
+------------------------------------------------------------
 
-## 14. Financial Immutability
+13. FINANCIAL IMMUTABILITY
 
 No API endpoint may:
+
 - Update financial_events
 - Delete financial_events
+- Modify historical ledger
 
-Only POST allowed.
+Financial operations are POST-only.
 
-Violations are critical system errors.
+------------------------------------------------------------
 
----
-
-## 15. Logging & Traceability
+14. LOGGING & TRACEABILITY
 
 Every request must log:
+
 - requestId
 - userId
 - companyId
@@ -391,27 +392,28 @@ Every request must log:
 
 Structured logging mandatory.
 
----
+------------------------------------------------------------
 
-## 16. Backward Compatibility
+15. BACKWARD COMPATIBILITY
 
-- v1 remains stable
-- Breaking change → v2
+- v1 is stable
+- Breaking changes require v2
+- Field removal forbidden within same version
 - Additive changes allowed
-- Field removal forbidden in same version
 
----
+------------------------------------------------------------
 
-## Final API Guarantee
+FINAL API GUARANTEE
 
-The API guarantees:
+This API guarantees:
 
 - Strict tenant isolation
 - Lifecycle integrity
 - Financial immutability
 - Atomic pickup
-- Deterministic state transitions
-- Idempotent financial operations
-- Production-grade security
+- Deterministic transitions
+- Idempotent financial commands
+- Process Manager consistency
+- Production-grade safety
 
-Any violation is considered a critical system failure.
+Violations are critical system failures.
