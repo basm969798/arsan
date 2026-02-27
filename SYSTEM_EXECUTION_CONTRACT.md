@@ -1,137 +1,215 @@
-# ULTRA MODE — Official Execution Contract (Final)
+# SYSTEM_EXECUTION_CONTRACT.md
+Authoritative Execution Model (Architecture-Frozen)
 
-## Purpose
+------------------------------------------------------------
 
-This document defines how Arsan is built.
+1. PURPOSE
 
-Goal:
+This document defines HOW Arsan must be implemented.
 
-* Lowest possible cost
-* Controlled architecture
-* No chaotic AI generation
-* Small safe steps only
+It enforces:
 
----
+- Architectural discipline
+- Controlled AI usage
+- Deterministic execution
+- Safe transaction boundaries
+- Event-driven integrity
+- Cost protection
 
-## 1. Roles
+If conflict exists:
+SYSTEM_INVARIANTS.md prevails.
 
-Developer (You):
+------------------------------------------------------------
 
-* Execute commands
-* Create files and folders
-* Paste small snippets
-* Commit frequently
+2. EXECUTION PHILOSOPHY
 
-AI (Agent):
+Principles:
 
-* Architectural decisions only
-* Define next small step
-* Review direction
-* Prevent structural mistakes
+- Small vertical slices only
+- Always runnable system
+- No early wiring
+- No premature optimization
+- Architecture before features
+- Explicit command boundaries
+- No hidden side effects
 
-AI must NOT:
+------------------------------------------------------------
 
-* Generate full systems
-* Create large features
-* Perform uncontrolled refactors
+3. DEVELOPMENT ROLES
 
----
+Developer:
 
-## 2. Build Strategy
+- Executes commands
+- Creates files
+- Commits frequently
+- Maintains structure discipline
 
-We build in very small vertical slices.
+AI Agent:
 
-Each slice must:
+- Proposes next minimal step
+- Reviews architectural direction
+- Prevents invariant violations
+
+AI MUST NOT:
+
+- Generate full subsystems
+- Refactor large structures
+- Modify frozen architecture
+- Bypass lifecycle rules
+
+------------------------------------------------------------
+
+4. LAYERED EXECUTION MODEL
+
+Strict separation:
+
+1. API Layer
+2. Authorization Layer
+3. Command Layer
+4. Domain (Aggregate) Layer
+5. Event Store Layer
+6. Process Manager
+7. Projection Layer
+
+Rules:
+
+- Controllers MUST NOT contain business logic.
+- Domain rules MUST NOT exist in controllers.
+- Database access MUST NOT occur in controllers.
+- Aggregate mutations occur ONLY in domain layer.
+
+------------------------------------------------------------
+
+5. COMMAND EXECUTION FLOW
+
+Every command MUST follow:
+
+HTTP Request
+→ Authentication
+→ Tenant Validation
+→ Authorization Check
+→ Command Validation
+→ Load Aggregate
+→ Validate Current State
+→ Emit Domain Event(s)
+→ Append Event(s)
+→ Update Aggregate Version
+→ Commit Transaction
+→ Trigger Process Manager (if applicable)
+→ Return Response
+
+Skipping any step is forbidden.
+
+------------------------------------------------------------
+
+6. TRANSACTION BOUNDARIES
+
+Single aggregate mutation must be atomic.
+
+Transaction must include:
+
+- Event append
+- Aggregate version increment
+- Projection update (if synchronous)
+- Idempotency key persistence
+
+Process Manager actions may execute in separate transaction.
+
+------------------------------------------------------------
+
+7. PROCESS MANAGER RULES
+
+Process Manager:
+
+- Listens to events
+- Dispatches new commands
+- NEVER mutates aggregates directly
+- NEVER bypasses authorization logic
+- MUST respect lifecycle rules
+
+Process Manager must not create hidden side effects.
+
+------------------------------------------------------------
+
+8. EVENT DISCIPLINE
+
+- All state mutations MUST emit events.
+- Direct DB mutation of derived state is forbidden.
+- Event emission must be deterministic.
+- Event append must succeed or rollback entire transaction.
+
+------------------------------------------------------------
+
+9. SMALL SLICE RULE
+
+Each development slice must:
 
 1. Add minimal structure
-2. Avoid early wiring
-3. Avoid business logic
-4. Keep the project runnable
+2. Avoid premature wiring
+3. Avoid full feature logic
+4. Keep system bootable
 
 After each slice:
 
-* git add .
-* git commit -m "small scaffold"
-* git push
+- git add .
+- git commit -m "small scaffold"
+- git push
 
-No large uncommitted changes.
+Large uncommitted changes forbidden.
 
----
+------------------------------------------------------------
 
-## 3. No Early Wiring
+10. MIGRATION DISCIPLINE
 
-Do NOT:
+- Schema changes via versioned migrations only.
+- No manual DB edits.
+- No event history rewrite.
+- No financial ledger rewrite.
+- Backward-compatible changes preferred.
 
-* Register modules without need
-* Add dependency injection early
-* Import modules speculatively
-* Connect database before required
+------------------------------------------------------------
 
-Structure first.
-Logic later.
+11. COST PROTECTION RULE
 
----
+Avoid:
 
-## 4. Small Code Rule
+- Large AI prompts
+- Full-feature generation
+- Massive refactors
+- Architecture changes without review
 
-AI may generate:
+Only one small safe step at a time.
 
-* Empty module
-* Empty controller
-* Empty service
-* Interface
-* Enum
-* Skeleton under 20 lines
+------------------------------------------------------------
 
-Anything bigger must be reviewed first.
+12. FAILURE POLICY
 
----
+If after a change:
 
-## 5. Always Runnable Rule
-
-After every change:
-
-The backend must still start without errors.
-
-If it does not start:
+- Application does not start
+- Tests fail
+- Migration fails
 
 Stop immediately.
 Fix before continuing.
 
----
+------------------------------------------------------------
 
-## 6. Architecture First
+FINAL EXECUTION GUARANTEE
 
-Order of development:
+This execution contract guarantees:
 
-1. Structure
-2. Skeleton
-3. Freeze
-4. Then logic (later phase)
-
-No feature-first development.
-
----
-
-## 7. Cost Protection Principle
-
-Avoid:
-
-* Large AI prompts
-* Full feature generation
-* Mass refactors
-* “Build everything” requests
-
-Only request one small step at a time.
-
----
-
-## Final Principle
+- Architecture discipline
+- Deterministic command flow
+- Safe transaction boundaries
+- Aggregate isolation
+- Event-driven integrity
+- Financial safety
+- Tenant isolation
+- Controlled AI behavior
+- Low-cost incremental development
 
 Control the AI.
-Do not let the AI control the architecture.
-
-Small steps.
-Stable foundation.
-Low cost.
-Long-term clarity.
+Protect the architecture.
+Build slowly.
+Stay deterministic.
