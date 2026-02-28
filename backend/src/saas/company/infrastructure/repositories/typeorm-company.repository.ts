@@ -1,23 +1,31 @@
-import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Company } from '../db/company.entity';
 import { ICompanyRepository } from '../../domain/repositories/company.repository.interface';
+import { BaseRepository } from '../../../../common/database/base.repository';
 
-export class TypeOrmCompanyRepository implements ICompanyRepository {
+export class TypeOrmCompanyRepository 
+  extends BaseRepository<Company> 
+  implements ICompanyRepository 
+{
   constructor(
     @InjectRepository(Company)
-    private readonly repository: Repository<Company>,
-  ) {}
-
-  async save(company: Partial<Company>): Promise<Company> {
-    return await this.repository.save(company);
+    companyRepo: Repository<Company>, // 🛡️ حذفنا private readonly هنا
+  ) {
+    super(companyRepo.target, companyRepo.manager, companyRepo.queryRunner);
   }
 
+  // 🛡️ حل تعارض findById:
+  // بما أن البحث عن "شركة" يتم بمعرفها، والواجهة تطلب id فقط، نقوم بتجاوز (Override) دالة الأب
   async findById(id: string): Promise<Company | null> {
-    return await this.repository.findOne({ where: { id } });
+    return await this.findOne({ where: { id } as any });
+  }
+
+  async saveCompany(company: Partial<Company>): Promise<Company> {
+    return await this.save(company as Company);
   }
 
   async findByOwner(ownerId: string): Promise<Company[]> {
-    return await this.repository.find({ where: { owner_user_id: ownerId } });
+    return await this.find({ where: { owner_user_id: ownerId } as any });
   }
 }

@@ -1,26 +1,41 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, VersionColumn } from 'typeorm';
+import { Entity, Column, VersionColumn, Index } from 'typeorm';
+import { BaseEntity } from '../../../common/database/base.entity';
 
 @Entity('orders')
-export class Order {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+export class Order extends BaseEntity {
 
   @Column()
+  @Index({ unique: true })
   order_number: string;
 
   @Column({ default: 'PENDING' })
   status: string;
 
-  @Column('decimal', { precision: 12, scale: 2 })
-  locked_price: number;
+  // 🛡️ حماية البند 5.2: جعل السعر خاصاً للتحكم في التعديل
+  @Column('decimal', { 
+    name: 'locked_price',
+    precision: 12, 
+    scale: 2,
+    transformer: {
+      to: (value: number) => value,
+      from: (value: string) => parseFloat(value)
+    }
+  })
+  private _locked_price: number;
 
-  @CreateDateColumn()
-  created_at: Date;
+  // 🛡️ الـ Setter هو الحارس (Guard) الذي يمنع كسر الـ Invariant
+  set locked_price(value: number) {
+    // إذا كانت الحالة ليست PENDING، يُمنع تغيير السعر نهائياً
+    if (this.status !== 'PENDING' && this._locked_price !== undefined) {
+      throw new Error('INVARIANT_VIOLATION: Price is locked and cannot be modified after ACCEPTED state.');
+    }
+    this._locked_price = value;
+  }
 
-  @UpdateDateColumn()
-  updated_at: Date;
+  get locked_price(): number {
+    return this._locked_price;
+  }
 
-  // 🛡️ هذا هو البند رقم 7 في الدستور - القفل المتفائل
   @VersionColumn()
   version: number;
 }

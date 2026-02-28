@@ -1,14 +1,17 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, Column } from 'typeorm';
+// 🛡️ استيراد القاعدة الأساسية لضمان توحيد الحقول والتواريخ
+import { BaseEntity } from '../../../../common/database/base.entity';
 
 @Entity('companies')
-export class Company {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+export class Company extends BaseEntity { // 👈 الوراثة من BaseEntity هي الحل!
+
+  // 🛡️ ملاحظة: تم حذف id و created_at و updated_at 
+  // لأنها موروثة الآن من BaseEntity. تكرارها هنا هو سبب الأخطاء الحمراء.
 
   @Column()
   name: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'owner_user_id' })
   owner_user_id: string;
 
   @Column({
@@ -18,9 +21,5 @@ export class Company {
   })
   status: string;
 
-  @CreateDateColumn()
-  created_at: Date;
-
-  @UpdateDateColumn()
-  updated_at: Date;
+  
 }

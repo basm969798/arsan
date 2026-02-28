@@ -1,25 +1,36 @@
-import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { UserEntity } from '../db/user.entity';
 import { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { IUser } from '../../domain/models/user.interface';
+import { BaseRepository } from '../../../../common/database/base.repository';
 
-export class TypeOrmUserRepository implements IUserRepository {
+export class TypeOrmUserRepository 
+  extends BaseRepository<UserEntity> 
+  implements IUserRepository 
+{
   constructor(
     @InjectRepository(UserEntity)
-    private readonly repository: Repository<UserEntity>,
-  ) {}
+    userRepo: Repository<UserEntity>,
+  ) {
+    super(userRepo.target, userRepo.manager, userRepo.queryRunner);
+  }
 
   async findByEmail(email: string): Promise<IUser | null> {
-    return await this.repository.findOne({ where: { email } });
+    return await this.findOne({ where: { email } as any });
   }
 
-  async save(user: Partial<IUser>): Promise<IUser> {
-    const newUser = this.repository.create(user as UserEntity);
-    return await this.repository.save(newUser);
+  async saveUser(user: Partial<IUser>): Promise<IUser> {
+    const newUser = this.create(user as UserEntity);
+    return await this.save(newUser);
   }
 
-  async update(id: string, user: Partial<IUser>): Promise<void> {
-    await this.repository.update(id, user as UserEntity);
+  /**
+   * 🛡️ تنفيذ دالة patch التي تطلبها الواجهة
+   * نقوم باستدعاء super.update (دالة TypeORM الأصلية) داخلياً
+   */
+  async patch(id: string, user: Partial<IUser>): Promise<void> {
+    await super.update(id, user as any);
+    return; // إرجاع void صريح لإرضاء TypeScript
   }
 }

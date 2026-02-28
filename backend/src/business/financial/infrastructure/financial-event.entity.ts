@@ -1,12 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, Column } from 'typeorm';
+// 🛡️ الربط بالدستور لضمان عزل الشركات (Rule 2.1)
+import { BaseEntity } from '../../../common/database/base.entity';
 
 @Entity('financial_events')
-export class FinancialEvent {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+export class FinancialEvent extends BaseEntity {
 
-  @Column()
-  order_id: string;
+  // 🛡️ البند 5.3: يجب أن يحتوي كل حدث مالي على مرجع (Reference ID)
+  @Column({ name: 'reference_id' })
+  reference_id: string; // كان يسمى order_id، تم تعميمه ليتوافق مع الدستور
 
   @Column({
     type: 'enum',
@@ -14,15 +15,21 @@ export class FinancialEvent {
   })
   event_type: string;
 
-  @Column('decimal', { precision: 12, scale: 2 })
+  // 🛡️ الدقة المالية (Rule 5.3): استخدام 12 رقماً مع منزلتين عشريتين
+  @Column('decimal', { 
+    precision: 12, 
+    scale: 2,
+    transformer: {
+      to: (value: number) => value,
+      from: (value: string) => parseFloat(value)
+    }
+  })
   amount: number;
 
   @Column()
   currency: string;
 
-  @CreateDateColumn()
-  occurred_at: Date;
-
+  
   @Column({ type: 'jsonb', nullable: true })
   metadata: any;
 }
