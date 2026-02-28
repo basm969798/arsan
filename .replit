@@ -1,5 +1,5 @@
 run = "bash setup.sh"
-modules = ["nodejs-20"]
+modules = ["nodejs-20", "postgresql-16"]
 
 [agent]
 expertMode = true
@@ -54,3 +54,4 @@ externalPort = 8080
 
 [nix]
 packages = ["nano"]
+channel = "stable-25_05"

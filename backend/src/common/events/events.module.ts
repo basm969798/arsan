@@ -3,7 +3,13 @@ import { DomainEventBus } from './domain-event.bus';
 
 @Global()
 @Module({
-  providers: [DomainEventBus],
-  exports: [DomainEventBus],
+  providers: [
+    DomainEventBus,
+    {
+      provide: 'IEventBus',
+      useExisting: DomainEventBus,
+    },
+  ],
+  exports: [DomainEventBus, 'IEventBus'],
 })
 export class EventsModule {}

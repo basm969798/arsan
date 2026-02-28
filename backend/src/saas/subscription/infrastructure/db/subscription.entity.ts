@@ -1,14 +1,10 @@
 import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
-// 🛡️ استيراد القاعدة الأساسية لضمان عزل الشركات والتواريخ الموحدة
 import { BaseEntity } from '../../../../common/database/base.entity';
 import { Company } from '../../../company/infrastructure/db/company.entity';
 import { PlanEntity } from './plan.entity';
 
 @Entity('subscriptions')
-export class SubscriptionEntity extends BaseEntity { // 👈 الوراثة من BaseEntity
-
-  // 🛡️ ملاحظة: تم حذف id و companyId و createdAt و updated_at 
-  // لأنها أصبحت موروثة تلقائياً من BaseEntity. تكرارها هنا يسبب خطأ TypeScript.
+export class SubscriptionEntity extends BaseEntity {
 
   @Column({ type: 'uuid' })
   planId: string;
@@ -20,17 +16,14 @@ export class SubscriptionEntity extends BaseEntity { // 👈 الوراثة من
   })
   status: string;
 
-  // 🛡️ التزاماً بالبند رقم 9: التواريخ ستعامل كـ UTC
   @Column({ type: 'timestamp' })
   startDate: Date;
 
   @Column({ type: 'timestamp' })
   endDate: Date;
 
-  // --- العلاقات (Relations) ---
-
   @ManyToOne(() => Company)
-  @JoinColumn({ name: 'company_id' }) // تأكد أن الاسم يطابق الحقل في BaseEntity
+  @JoinColumn({ name: 'company_id' })
   company: Company;
 
   @ManyToOne(() => PlanEntity)

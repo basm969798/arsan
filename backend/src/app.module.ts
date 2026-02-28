@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventsModule } from './common/events/events.module';
 import { IdentityModule } from './saas/identity/identity.module';
 import { CompanyModule } from './saas/company/company.module';
 import { SubscriptionModule } from './saas/subscription/subscription.module';
@@ -8,14 +9,12 @@ import { SubscriptionModule } from './saas/subscription/subscription.module';
   imports: [
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      port: 5432,
-      username: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
-      database: process.env.DB_NAME || 'arsan_db',
+      url: process.env.DATABASE_URL,
       autoLoadEntities: true,
-      synchronize: true, 
+      synchronize: true,
+      ssl: process.env.DATABASE_URL?.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
     }),
+    EventsModule,
     IdentityModule,
     CompanyModule,
     SubscriptionModule,
