@@ -1,0 +1,12 @@
+export enum OrderState {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  OFFERED = 'OFFERED',
+  ACCEPTED = 'ACCEPTED',
+  PREPARING = 'PREPARING',
+  READY = 'READY',
+  RECEIVED = 'RECEIVED', // تمت إضافتها لعملية الاستلام
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+  REJECTED = 'REJECTED'
+}
