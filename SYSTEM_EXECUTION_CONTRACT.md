@@ -1,215 +1,461 @@
-# SYSTEM_EXECUTION_CONTRACT.md
-Authoritative Execution Model (Architecture-Frozen)
+SYSTEM_EXECUTION_CONTRACT.md
 
-------------------------------------------------------------
+Authoritative Execution Model (Architecture-Frozen)
 
 1. PURPOSE
 
-This document defines HOW Arsan must be implemented.
+This document defines HOW the system executes commands and state mutations.
 
-It enforces:
+It guarantees:
 
-- Architectural discipline
-- Controlled AI usage
-- Deterministic execution
-- Safe transaction boundaries
-- Event-driven integrity
-- Cost protection
+Deterministic execution
 
-If conflict exists:
+Strict aggregate isolation
+
+Event-driven consistency
+
+Safe transaction boundaries
+
+Idempotent command processing
+
+Tenant-safe execution
+
+Replay-safe behavior
+
+If any conflict exists:
+
 SYSTEM_INVARIANTS.md prevails.
 
-------------------------------------------------------------
+This document governs runtime execution behavior.
 
-2. EXECUTION PHILOSOPHY
+2. EXECUTION PRINCIPLES
 
-Principles:
+The system follows strict execution discipline:
 
-- Small vertical slices only
-- Always runnable system
-- No early wiring
-- No premature optimization
-- Architecture before features
-- Explicit command boundaries
-- No hidden side effects
+All state changes occur through Commands.
 
-------------------------------------------------------------
+Commands mutate only one aggregate.
 
-3. DEVELOPMENT ROLES
+All mutations emit Domain Events.
 
-Developer:
+Events are the source of truth.
 
-- Executes commands
-- Creates files
-- Commits frequently
-- Maintains structure discipline
+Database projections are derived state only.
 
-AI Agent:
+All commands are idempotent.
 
-- Proposes next minimal step
-- Reviews architectural direction
-- Prevents invariant violations
+All execution must respect tenant isolation.
 
-AI MUST NOT:
+All mutations must respect state machine rules.
 
-- Generate full subsystems
-- Refactor large structures
-- Modify frozen architecture
-- Bypass lifecycle rules
+Forbidden:
 
-------------------------------------------------------------
+Direct database mutation
 
+Controller business logic
+
+Cross-aggregate mutation
+
+Hidden side effects
+
+Event mutation
+
+Bypassing domain validation
+
+3. COMMAND VS QUERY SEPARATION
+
+The system follows CQRS principles.
+
+Commands:
+
+Mutate system state
+
+Emit domain events
+
+Execute through aggregates
+
+Queries:
+
+Read projections
+
+Never mutate state
+
+Never emit events
+
+Strict rule:
+
+Queries MUST NOT modify system state.
+Commands MUST NOT return projection-based decisions.
 4. LAYERED EXECUTION MODEL
 
-Strict separation:
+Execution must follow strict layer boundaries.
 
-1. API Layer
-2. Authorization Layer
-3. Command Layer
-4. Domain (Aggregate) Layer
-5. Event Store Layer
-6. Process Manager
-7. Projection Layer
+Layers:
+
+API Layer
+
+Authentication Layer
+
+Tenant Context Layer
+
+Authorization Layer
+
+Command Handler Layer
+
+Domain Aggregate Layer
+
+Event Store Layer
+
+Process Manager Layer
+
+Projection Layer
+
+Forbidden interactions:
+
+Controller → Database
+Controller → Aggregate
+Controller → Event Store
+Domain → HTTP
+Domain → Infrastructure services
+
+Allowed interactions:
+
+Controller → Command Handler
+Command Handler → Aggregate
+Aggregate → Domain Event
+Infrastructure → Event Store
+Projection → Database
+5. COMMAND STRUCTURE
+
+Every command must follow the standard command envelope.
+
+Example:
+
+{
+  commandId: UUID,
+  aggregateType: "Order",
+  aggregateId: UUID,
+  commandType: "ACCEPT_OFFER",
+  companyId: UUID,
+  actorId: UUID,
+  idempotencyKey: string,
+  timestamp: ISO8601,
+  payload: {}
+}
 
 Rules:
 
-- Controllers MUST NOT contain business logic.
-- Domain rules MUST NOT exist in controllers.
-- Database access MUST NOT occur in controllers.
-- Aggregate mutations occur ONLY in domain layer.
+commandId must be unique
 
-------------------------------------------------------------
+aggregateId must exist
 
-5. COMMAND EXECUTION FLOW
+companyId must be validated
 
-Every command MUST follow:
+idempotencyKey required for critical commands
+
+6. COMMAND EXECUTION FLOW
+
+Every command must follow this deterministic pipeline.
 
 HTTP Request
 → Authentication
-→ Tenant Validation
+→ Tenant Context Validation
 → Authorization Check
-→ Command Validation
+→ Command Schema Validation
+→ Idempotency Check
 → Load Aggregate
-→ Validate Current State
+→ Validate Aggregate Version
+→ Validate Lifecycle State
+→ Execute Domain Logic
 → Emit Domain Event(s)
-→ Append Event(s)
+→ Append Event(s) to Event Store
 → Update Aggregate Version
 → Commit Transaction
-→ Trigger Process Manager (if applicable)
+→ Dispatch Events to Process Manager
+→ Update Projections
 → Return Response
 
 Skipping any step is forbidden.
 
-------------------------------------------------------------
+7. TENANT CONTEXT PROPAGATION
 
-6. TRANSACTION BOUNDARIES
+Tenant identity must be validated before any domain access.
 
-Single aggregate mutation must be atomic.
+Rules:
+
+Every request must contain:
+
+company_id
+actor_id
+
+Execution layers must propagate tenant context.
+
+Database queries MUST include:
+
+WHERE company_id = ?
+
+Failure to enforce tenant context is a critical security violation.
+
+8. AGGREGATE LOADING
+
+Aggregates must be reconstructed from event history.
+
+Aggregate load procedure:
+
+Fetch events by aggregate_id
+Order by version
+Replay events
+Reconstruct aggregate state
+
+Rules:
+
+Aggregates must maintain internal version
+
+Version must match event store version
+
+Out-of-order events forbidden
+
+9. OPTIMISTIC CONCURRENCY CONTROL
+
+All aggregate mutations must enforce optimistic locking.
+
+Validation rule:
+
+ExpectedVersion == CurrentVersion
+
+If mismatch occurs:
+
+ConcurrencyException
+
+Transaction must abort.
+
+This prevents race conditions.
+
+10. IDEMPOTENCY ENFORCEMENT
+
+All critical commands must support idempotency.
+
+Examples:
+
+Accept offer
+
+Pickup order
+
+Register payment
+
+Cash closing
+
+Ownership transfer
+
+Implementation:
+
+Client sends:
+
+Idempotency-Key
+
+Server persists:
+
+command_idempotency
+
+Constraint:
+
+UNIQUE(aggregate_id, idempotency_key)
+
+Duplicate command must return previous result.
+
+Duplicate event emission is forbidden.
+
+11. TRANSACTION BOUNDARIES
+
+All aggregate mutations must occur in one database transaction.
 
 Transaction must include:
 
-- Event append
-- Aggregate version increment
-- Projection update (if synchronous)
-- Idempotency key persistence
+Event append
 
-Process Manager actions may execute in separate transaction.
+Aggregate version increment
 
-------------------------------------------------------------
+Idempotency persistence
 
-7. PROCESS MANAGER RULES
+Projection update (if synchronous)
 
-Process Manager:
+Rollback rule:
 
-- Listens to events
-- Dispatches new commands
-- NEVER mutates aggregates directly
-- NEVER bypasses authorization logic
-- MUST respect lifecycle rules
+If any step fails:
 
-Process Manager must not create hidden side effects.
+Rollback entire transaction
 
-------------------------------------------------------------
+Partial success is forbidden.
 
-8. EVENT DISCIPLINE
+12. EVENT APPEND RULES
 
-- All state mutations MUST emit events.
-- Direct DB mutation of derived state is forbidden.
-- Event emission must be deterministic.
-- Event append must succeed or rollback entire transaction.
+Events must be appended to system_events.
 
-------------------------------------------------------------
+Rules:
 
-9. SMALL SLICE RULE
+Version increments sequentially
 
-Each development slice must:
+No skipped versions
 
-1. Add minimal structure
-2. Avoid premature wiring
-3. Avoid full feature logic
-4. Keep system bootable
+No event updates
+
+No event deletions
+
+Append operation must be atomic.
+
+Failure must rollback transaction.
+
+13. PROCESS MANAGER EXECUTION
+
+Process Manager implements Saga pattern.
+
+Responsibilities:
+
+Listen to events
+
+Dispatch new commands
+
+Coordinate cross-aggregate workflows
+
+Process Manager must NOT:
+
+Mutate aggregates directly
+
+Bypass command handlers
+
+Modify event history
+
+Saga state stored in:
+
+saga_instances
+14. PROJECTION UPDATE RULES
+
+Projections are derived state.
+
+Rules:
+
+Projection updates must be idempotent
+
+Projection handlers must tolerate replay
+
+Projection rebuild must produce identical results
+
+Projection failures must NOT corrupt event store.
+
+Projection rebuild must be possible from event history.
+
+15. EVENT REPLAY SAFETY
+
+System must support event replay.
+
+Replay rules:
+
+Replay must NOT trigger:
+
+Notifications
+
+External integrations
+
+Payment gateways
+
+Webhooks
+
+Replay environment must be isolated.
+
+Replay must produce deterministic projections.
+
+16. FAILURE POLICY
+
+If any of the following occurs:
+
+Application fails to start
+
+Migration fails
+
+Event append fails
+
+Concurrency mismatch occurs
+
+Execution must stop.
+
+System must remain consistent.
+
+No partial mutation allowed.
+
+17. DEVELOPMENT DISCIPLINE
+
+Development must follow small vertical slices.
+
+Each slice must:
+
+Add minimal functionality
+
+Keep system bootable
+
+Avoid architecture refactors
+
+Avoid multi-module changes
 
 After each slice:
 
-- git add .
-- git commit -m "small scaffold"
-- git push
+git add .
+git commit -m "small safe step"
+git push
 
 Large uncommitted changes forbidden.
 
-------------------------------------------------------------
+18. AI EXECUTION RULES
 
-10. MIGRATION DISCIPLINE
+AI Agents must operate under strict control.
 
-- Schema changes via versioned migrations only.
-- No manual DB edits.
-- No event history rewrite.
-- No financial ledger rewrite.
-- Backward-compatible changes preferred.
+AI may:
 
-------------------------------------------------------------
+Propose next small step
 
-11. COST PROTECTION RULE
+Generate minimal scaffolding
 
-Avoid:
+Validate architectural rules
 
-- Large AI prompts
-- Full-feature generation
-- Massive refactors
-- Architecture changes without review
+AI must NOT:
 
-Only one small safe step at a time.
+Generate entire subsystems
 
-------------------------------------------------------------
+Refactor architecture
 
-12. FAILURE POLICY
+Modify invariant files
 
-If after a change:
+Rewrite domain lifecycle
 
-- Application does not start
-- Tests fail
-- Migration fails
+Modify event types
 
-Stop immediately.
-Fix before continuing.
-
-------------------------------------------------------------
+Ambiguity must trigger clarification request.
 
 FINAL EXECUTION GUARANTEE
 
 This execution contract guarantees:
 
-- Architecture discipline
-- Deterministic command flow
-- Safe transaction boundaries
-- Aggregate isolation
-- Event-driven integrity
-- Financial safety
-- Tenant isolation
-- Controlled AI behavior
-- Low-cost incremental development
+Deterministic command execution
 
-Control the AI.
-Protect the architecture.
-Build slowly.
-Stay deterministic.
+Strict aggregate isolation
+
+Event-driven consistency
+
+Idempotent command processing
+
+Tenant-safe operations
+
+Concurrency-safe mutations
+
+Replay-safe projections
+
+Financial integrity protection
+
+The system remains:
+
+Deterministic
+Auditable
+Consistent
+Replayable
+Financially safe
+
+Any violation of this contract is considered architectural failure.
