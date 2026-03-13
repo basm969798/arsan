@@ -1,7 +1,6 @@
-# SYSTEM_AUTHORIZATION.md
-Authoritative Authorization Model (Architecture-Frozen)
+SYSTEM_AUTHORIZATION.md
 
-------------------------------------------------------------
+Authoritative Authorization Model (Architecture-Frozen)
 
 1. PURPOSE
 
@@ -9,245 +8,409 @@ This document defines the authoritative authorization model.
 
 It governs:
 
-- Tenant-scoped access control
-- Role and permission enforcement
-- Lifecycle-aware access validation
-- Financial operation restrictions
-- Super Admin boundaries
-- Domain-layer enforcement rules
+Tenant-scoped access control
+
+Role and permission enforcement
+
+Lifecycle-aware access validation
+
+Financial operation restrictions
+
+Super Admin boundaries
+
+Domain-layer enforcement rules
+
+Authorization context propagation
+
+Command-level permission validation
 
 If conflict exists:
+
 SYSTEM_INVARIANTS.md prevails.
 
 Authorization violations are critical security failures.
 
-------------------------------------------------------------
-
 2. AUTHORIZATION MODEL
 
-Arsan uses Tenant-Scoped Role-Based Access Control (RBAC).
+Arsan implements Tenant-Scoped Role-Based Access Control (RBAC).
 
-Core model:
+Authorization decision must evaluate:
 
-Authorization decision =
-(user_id, company_id, permission, resource_owner_company_id, lifecycle_state)
+(user_id,
+ company_id,
+ permission,
+ resource_owner_company_id,
+ lifecycle_state)
 
-Authorization MUST validate:
+Authorization must validate five dimensions:
 
-1. Identity (authenticated user)
-2. Tenant context
-3. Role-to-permission mapping
-4. Resource ownership
-5. Lifecycle state (when applicable)
+Identity — authenticated user
 
-All five dimensions are mandatory.
+Tenant Context — company scope
 
-------------------------------------------------------------
+Permission — action authorization
 
-3. TENANT ISOLATION ENFORCEMENT
+Resource Ownership — tenant ownership
 
-Tenant validation MUST occur BEFORE data fetch.
+Lifecycle State — domain lifecycle rules
+
+Authorization decisions must be deterministic.
+
+3. AUTHORIZATION CONTEXT
+
+Every request must establish an Authorization Context.
+
+Authorization context includes:
+
+user_id
+company_id
+roles[]
+permissions[]
+is_super_admin
+
+This context must be propagated through:
+
+API Layer
+Command Handler
+Domain Layer
+Process Manager
+
+Authorization context must be immutable during request execution.
+
+4. TENANT ISOLATION ENFORCEMENT
+
+Tenant validation MUST occur before any resource access.
 
 Rules:
 
-- Every resource query MUST include company_id filter.
-- Resource.company_id MUST equal current tenant context.
-- Cross-tenant access is forbidden.
-- Authorization check must fail before returning data.
+All resource queries must include company_id filter.
 
-No "fetch then validate" pattern allowed.
+Resource ownership must match tenant context.
 
-------------------------------------------------------------
+Cross-tenant access is forbidden.
 
-4. ROLE & PERMISSION MODEL
+Authorization must fail before data retrieval.
 
-Roles:
+Forbidden pattern:
 
-- Assigned per company.
-- Map to system-defined permissions.
-- Role names MUST NOT be used in business logic.
+Fetch resource → then validate tenant
 
-Authorization MUST depend only on permissions,
-never on role names.
+Required pattern:
+
+Validate tenant → fetch resource
+
+Tenant isolation violations are critical security failures.
+
+5. ROLE & PERMISSION MODEL
+
+Roles are tenant-scoped.
+
+Roles assign permissions, but domain logic must rely only on permissions.
 
 Example permissions:
 
-- orders.create
-- orders.accept
-- orders.prepare
-- orders.cancel
-- orders.read
-- financial.register_cash
-- financial.register_debt
-- financial.register_payment
-- ownership.transfer.request
-- ownership.transfer.accept
-- catalog.edit
-- users.manage
+orders.create
+orders.read
+orders.accept
+orders.prepare
+orders.ready
+orders.cancel
 
-Permission registry is global and version-controlled.
+offers.submit
+offers.select
 
-------------------------------------------------------------
+financial.register_cash
+financial.register_debt
+financial.register_payment
 
-5. DOMAIN-LAYER ENFORCEMENT
+ownership.transfer.request
+ownership.transfer.accept
 
-Authorization MUST be enforced at:
-
-- API layer (guard/policy)
-- Domain command layer
-
-Domain commands MUST validate:
-
-- Permission
-- Tenant context
-- Lifecycle state
-
-No command may execute without authorization validation.
-
-Hardcoded permission bypass inside domain logic is forbidden.
-
-------------------------------------------------------------
-
-6. LIFECYCLE-AWARE AUTHORIZATION
-
-Permission alone is insufficient.
-
-Authorization MUST also validate lifecycle state.
-
-Examples:
-
-- orders.cancel allowed only before PREPARING.
-- financial.register_debt allowed only after RECEIVED.
-- financial.register_payment allowed only if outstanding balance > 0.
-- ownership.transfer.accept forbidden after COMPLETED.
-
-Lifecycle validation MUST align with SYSTEM_STATE_MACHINE_MATRIX.md.
-
-------------------------------------------------------------
-
-7. FINANCIAL AUTHORIZATION RULES
-
-Financial operations require strict validation.
+catalog.edit
+users.manage
 
 Rules:
 
-- Financial actions forbidden before ORDER_RECEIVED.
-- Financial actions forbidden after ORDER_COMPLETED.
-- Overpayment attempts must be rejected.
-- Financial domain cannot mutate Order directly.
+Permission registry must be global.
 
-Super Admin cannot bypass:
+Permissions must be version-controlled.
 
-- Financial immutability
-- Ledger integrity
-- Balance rules
+Domain logic must NOT check role names.
 
-------------------------------------------------------------
+Only permissions may be used for authorization decisions.
 
-8. SUPER ADMIN MODEL
+6. PERMISSION RESOLUTION
+
+Permission resolution occurs during authentication.
+
+Flow:
+
+Authenticate User
+→ Load user_company_roles
+→ Resolve permissions
+→ Build Authorization Context
+→ Attach to request
+
+Resolved permissions must remain constant during request lifecycle.
+
+Dynamic permission mutation during execution is forbidden.
+
+7. COMMAND AUTHORIZATION
+
+All commands must validate authorization before execution.
+
+Command authorization requires:
+
+Permission Check
+Tenant Validation
+Lifecycle Validation
+Resource Ownership Validation
+
+Command execution is forbidden without successful authorization.
+
+Authorization must occur before aggregate loading when possible.
+
+8. DOMAIN-LAYER ENFORCEMENT
+
+Authorization must be enforced at two levels:
+
+API Layer
+
+Responsible for:
+
+Basic permission validation
+
+Request blocking
+
+Early rejection
+
+Domain Layer
+
+Responsible for:
+
+Lifecycle-aware authorization
+
+Resource ownership validation
+
+Cross-aggregate security validation
+
+Domain commands must enforce authorization.
+
+Authorization must never exist only in controllers.
+
+9. LIFECYCLE-AWARE AUTHORIZATION
+
+Permissions alone are insufficient.
+
+Authorization must validate lifecycle state constraints.
+
+Examples:
+
+orders.cancel allowed only before PREPARING
+
+financial.register_debt allowed only after ORDER_RECEIVED
+
+financial.register_payment allowed only when outstanding_balance > 0
+
+ownership.transfer.accept forbidden after ORDER_COMPLETED
+
+Lifecycle validation must align with:
+
+SYSTEM_STATE_MACHINE_MATRIX.md
+
+Lifecycle violations must raise domain errors.
+
+10. FINANCIAL AUTHORIZATION RULES
+
+Financial operations require strict enforcement.
+
+Rules:
+
+Financial operations forbidden before ORDER_RECEIVED.
+
+Financial operations forbidden after ORDER_COMPLETED.
+
+Payments must not exceed outstanding balance.
+
+Ledger immutability must never be bypassed.
+
+Financial commands must validate:
+
+Permission
+Lifecycle state
+Outstanding balance
+Order ownership
+
+Super Admin cannot bypass financial invariants.
+
+11. RESOURCE OWNERSHIP VALIDATION
+
+Authorization must validate resource ownership.
+
+Rule:
+
+resource.company_id == current tenant context
+
+Ownership transfer rules:
+
+Transfer request → current owner company
+Transfer acceptance → target company
+
+Ownership change must occur via events.
+
+Direct ownership mutation is forbidden.
+
+12. PROCESS MANAGER AUTHORIZATION
+
+Process Managers must execute commands with authorization context.
+
+Saga execution rules:
+
+Saga must not bypass permission validation.
+
+Saga commands must include system actor identity.
+
+Saga must respect lifecycle constraints.
+
+Process Managers must never execute privileged operations silently.
+
+13. IDEMPOTENCY & AUTHORIZATION
+
+Idempotent commands must revalidate authorization on retry.
+
+Rules:
+
+Permission must be validated again.
+
+Role changes must affect retry attempts.
+
+Idempotency must prevent duplicate events.
+
+Idempotency must not bypass authorization.
+
+14. SUPER ADMIN MODEL
 
 Super Admin is a system-level role.
 
 Capabilities:
 
-- View cross-tenant data
-- Manage companies
-- Manage user assignments
+View cross-tenant data
 
-Super Admin limitations:
+Manage companies
 
-- Cannot modify immutable events.
-- Cannot modify financial ledger entries.
-- Cannot override lifecycle transitions.
-- Cannot reopen completed orders.
-- Cannot bypass invariants.
+Manage user assignments
 
-Super Admin bypass is limited to visibility and tenant access only.
+Super Admin restrictions:
 
-------------------------------------------------------------
+Super Admin cannot bypass:
 
-9. RESOURCE OWNERSHIP VALIDATION
+Event immutability
+Financial ledger immutability
+Order lifecycle rules
+Tenant isolation boundaries
+State machine transitions
 
-Authorization MUST validate:
+Super Admin privileges are observational and administrative, not domain-mutating.
 
-resource.company_id == current tenant context
+All Super Admin actions must be fully logged.
 
-For ownership transfer:
+15. AUTHORIZATION CACHING RULES
 
-- Request must originate from current owner.
-- Acceptance must be performed by target company.
-- Ownership update must be event-driven.
+Authorization results may be cached for performance.
 
-Cross-aggregate mutation without Process Manager is forbidden.
+Cache rules:
 
-------------------------------------------------------------
+Cache must be tenant-aware.
 
-10. IDEMPOTENCY & AUTHORIZATION
+Cache must invalidate on role changes.
 
-Idempotent commands MUST revalidate authorization on retry.
+Cache must not persist beyond request lifecycle.
 
-Rules:
+Permission cache must not bypass lifecycle validation.
 
-- Idempotency does NOT bypass permission checks.
-- Role changes must affect future retries.
-- Duplicate command execution forbidden even if authorized.
+16. AUTHORIZATION AUDIT LOGGING
 
-------------------------------------------------------------
+Sensitive authorization decisions must be logged.
 
-11. ROLE ASSIGNMENT RULES
+Logged actions include:
 
-- User must have at least one role per company.
-- Role assignment changes must be auditable.
-- Role modification requires users.manage permission.
-- Owner role automatically assigned at company creation.
+Financial operations
+Ownership transfers
+Role modifications
+Super Admin actions
 
-Role assignments are tenant-scoped.
+Audit logs must include:
 
-------------------------------------------------------------
+user_id
+company_id
+action
+resource_id
+timestamp
+result
 
-12. FORBIDDEN PRACTICES
+Audit logs must be immutable.
+
+17. FORBIDDEN PRACTICES
 
 The system strictly forbids:
 
-- Hardcoded role-name checks.
-- Authorization inside frontend only.
-- Bypassing tenant filter for convenience.
-- Skipping lifecycle validation.
-- Mixing Super Admin with tenant roles.
-- Direct permission checks inside data layer.
-- Fetching resource before tenant validation.
+Hardcoded role checks
 
-Violations are critical security issues.
+Authorization in frontend only
 
-------------------------------------------------------------
+Tenant bypass queries
 
-13. FUTURE EXTENSIBILITY
+Lifecycle rule bypass
 
-Future models may include:
+Mixing Super Admin and tenant roles
 
-- Attribute-Based Access Control (ABAC)
-- Resource-level policies
-- External policy engines
+Permission checks inside repository layer
 
-Any evolution must preserve:
+Fetching resource before tenant validation
 
-- Tenant isolation
-- Financial immutability
-- Lifecycle enforcement
-- Deterministic authorization logic
+Bypassing domain authorization
 
-------------------------------------------------------------
+Violations are critical security failures.
+
+18. FUTURE EXTENSIBILITY
+
+Future authorization extensions may include:
+
+Attribute-Based Access Control (ABAC)
+Policy-based authorization
+Resource-level access policies
+External policy engines
+
+Any extension must preserve:
+
+Tenant isolation
+
+Lifecycle enforcement
+
+Financial integrity
+
+Deterministic authorization behavior
 
 FINAL AUTHORIZATION GUARANTEE
 
 This authorization model guarantees:
 
-- Strict tenant isolation
-- Permission-based enforcement
-- Lifecycle-aware access control
-- Financial protection
-- Immutable event safety
-- Domain-layer validation
-- Super Admin containment
+Strict tenant isolation
 
-Authorization is mandatory at every command boundary.
+Permission-based enforcement
+
+Lifecycle-aware authorization
+
+Financial protection
+
+Immutable event safety
+
+Domain-level authorization validation
+
+Safe Super Admin containment
+
+Deterministic access control
+
+Authorization enforcement is mandatory at every command boundary.
+
+Any violation is a critical system security failure.
