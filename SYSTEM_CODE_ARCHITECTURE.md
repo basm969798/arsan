@@ -1,9 +1,6 @@
-# SYSTEM_CODE_ARCHITECTURE.md
+SYSTEM_CODE_ARCHITECTURE.md
 
 Authoritative Code Architecture
-Hybrid Transactional Model
-
-------------------------------------------------------------
 
 1. PURPOSE
 
@@ -11,182 +8,304 @@ This document defines the official code-layer architecture of Arsan.
 
 It governs:
 
-- Backend layering
-- Frontend layering
-- Responsibility boundaries
-- Dependency rules
-- Allowed and forbidden interactions
+Backend layering
+
+Frontend layering
+
+Responsibility boundaries
+
+Dependency rules
+
+Code organization
+
+Event-driven execution alignment
 
 If code violates this document:
+
 The code must be refactored.
 
-------------------------------------------------------------
+If conflict exists:
 
-========================
+SYSTEM_INVARIANTS.md prevails.
+
+2. ARCHITECTURAL STYLE
+
+Arsan backend uses a hybrid architecture combining:
+
+Domain Driven Design (DDD)
+
+Event-driven architecture
+
+CQRS separation
+
+Transactional consistency per aggregate
+
+The system follows:
+
+Command → Domain → Event → Projection
+
+Domain events are the source of truth.
+
+Database projections exist for query efficiency only.
+
 BACKEND ARCHITECTURE
-========================
+3. BACKEND LAYERS OVERVIEW
 
-2. BACKEND LAYERS OVERVIEW
+The backend follows strict layering:
 
-Arsan backend follows a strict layered architecture:
+API Layer
 
-1. API Layer
-2. Application Layer
-3. Domain Layer
-4. Infrastructure Layer
-5. Persistence (DB Models)
+Application Layer
+
+Domain Layer
+
+Infrastructure Layer
+
+Persistence Layer
 
 Each layer has strict responsibilities.
 
-------------------------------------------------------------
-
-3. API LAYER
+4. API LAYER
 
 Location:
+
 backend/api/
 
 Responsibilities:
 
-- Receive HTTP requests
-- Validate DTOs
-- Authenticate user
-- Resolve tenant context
-- Check permissions
-- Call Application Use Case
-- Return standardized response
+Receive HTTP requests
+
+Validate request DTOs
+
+Authenticate user
+
+Resolve tenant context
+
+Perform initial authorization
+
+Dispatch commands to Application layer
+
+Return standardized API responses
 
 Forbidden:
 
-- Business logic
-- State transitions
-- Direct database queries
-- Domain rule validation
-- Financial calculations
+Business logic
 
-Controllers must be thin.
+Domain rule validation
 
-------------------------------------------------------------
+Lifecycle decisions
 
-4. APPLICATION LAYER (USE CASES)
+Financial calculations
+
+Direct database queries
+
+Controllers must remain thin.
+
+5. APPLICATION LAYER (COMMAND HANDLERS)
 
 Location:
+
 backend/application/
 
 Responsibilities:
 
-- Execute Commands (Use Cases)
-- Load aggregates from repository
-- Call Domain methods
-- Persist changes
-- Append audit events
-- Handle transactions
+Execute Commands
+
+Load aggregates from repository
+
+Invoke domain methods
+
+Persist domain events
+
+Maintain transaction boundaries
+
+Dispatch events to Process Manager
+
+Trigger projection updates
 
 Examples:
 
-- SubmitOrder
-- AcceptOrder
-- CancelOrder
-- ConfirmPickup
-- CloseWithCash
-- RegisterDebt
-- RegisterPayment
-- TransferOwnership
+SubmitOrderCommand
+AcceptOrderCommand
+CancelOrderCommand
+PrepareOrderCommand
+ConfirmPickupCommand
+RegisterCashCommand
+RegisterDebtCommand
+RegisterPaymentCommand
+TransferOwnershipCommand
 
 Forbidden:
 
-- Direct SQL outside repositories
-- Domain rule implementation
-- HTTP awareness
-- Hardcoded role checks
+Domain rule implementation
 
-Application layer orchestrates only.
+Direct SQL queries
 
-------------------------------------------------------------
+HTTP logic
 
-5. DOMAIN LAYER (CORE)
+Framework-specific domain logic
+
+Application layer orchestrates execution only.
+
+6. DOMAIN LAYER (CORE)
 
 Location:
+
 backend/domain/
 
-This is the heart of the system.
+This layer represents the business core.
 
 Responsibilities:
 
-- Aggregate roots
-- State machine enforcement
-- Invariants
-- Price locking
-- Prevent illegal transitions
-- Throw domain errors
+Aggregate roots
+
+Domain invariants
+
+Lifecycle state machine
+
+Price locking rules
+
+Financial constraints
+
+Emitting domain events
+
+Throwing domain errors
 
 Example:
 
-order.transitionTo(READY)
+order.acceptOffer()
+order.transitionToPreparing()
+order.markReady()
 
-If invalid:
-→ Throw DomainException
+If a rule is violated:
+
+throw DomainException
 
 Forbidden:
 
-- Database access
-- Framework imports (NestJS)
-- HTTP logic
-- External API calls
-- Logging side effects
+Database access
 
-Domain must be framework-independent.
+HTTP logic
 
-------------------------------------------------------------
+Framework dependencies
 
-6. INFRASTRUCTURE LAYER
+External services
+
+Logging side effects
+
+The domain layer must remain framework independent.
+
+7. EVENT MODEL IN CODE
+
+Domain events must be explicit classes.
+
+Example:
+
+OrderAcceptedEvent
+OrderPreparingEvent
+OrderReadyEvent
+OrderReceivedEvent
+OrderCompletedEvent
+FinancialCashRegisteredEvent
+FinancialDebtRegisteredEvent
+FinancialPaymentRegisteredEvent
+
+Events must contain:
+
+aggregate_id
+aggregate_type
+event_type
+company_id
+actor_id
+version
+payload
+timestamp
+
+Events are stored in:
+
+system_events
+
+Events are append-only.
+
+8. INFRASTRUCTURE LAYER
 
 Location:
+
 backend/infrastructure/
 
 Responsibilities:
 
-- Database connection
-- ORM / Query Builder
-- Repositories implementation
-- Redis client
-- External APIs (VIN, QR validation)
-- Logging implementation
-- Optimistic locking enforcement
+Database connection
+
+ORM / Query Builder
+
+Event store implementation
+
+Repository implementations
+
+Redis / caching
+
+External integrations
+
+Logging
+
+Message bus
+
+Saga execution
 
 Forbidden:
 
-- Business rules
-- Lifecycle decisions
-- Authorization decisions
+Business logic
 
-Infrastructure only implements technical details.
+Lifecycle decisions
 
-------------------------------------------------------------
+Domain rule enforcement
 
-7. PERSISTENCE MODEL
+Infrastructure only implements technical capabilities.
 
-Database is transactional.
+9. PERSISTENCE MODEL
 
-Authoritative state stored in:
+The database contains two types of data:
 
-- orders.status
-- orders.version
-- orders.locked_price
-- owner_company_id
+Authoritative Data
+system_events
+financial_events
+ownership_transfers
+Projection Data
+orders
+order_items
+offers
+order_pickup
 
-Append-only tables:
+Projection data is derived from events.
 
-- financial_events
-- system_events
-- ownership_transfers
+Projection state must be rebuildable from event history.
 
-State is NOT rebuilt from events.
+Direct mutation of projection state without event is forbidden.
 
-------------------------------------------------------------
+10. AGGREGATE REPOSITORIES
 
-8. DEPENDENCY RULES (BACKEND)
+Repositories are defined in domain layer as interfaces.
 
-Allowed:
+Example:
+
+OrderRepository
+FinancialRepository
+OwnershipRepository
+
+Infrastructure provides implementations.
+
+Repositories must support:
+
+loadAggregate()
+appendEvents()
+saveVersion()
+
+Repositories must enforce optimistic concurrency.
+
+11. DEPENDENCY RULES (BACKEND)
+
+Allowed dependencies:
 
 API → Application
 Application → Domain
@@ -194,175 +313,198 @@ Application → Infrastructure
 Infrastructure → Database
 
 Domain must NOT depend on:
-- Application
-- API
-- Infrastructure
+
+API
+Application
+Infrastructure
+Frameworks
 
 No circular dependencies allowed.
 
-------------------------------------------------------------
-
-9. FOLDER STRUCTURE (BACKEND)
-
+12. FOLDER STRUCTURE (BACKEND)
 backend/
  ├── api/
+ │     ├── controllers/
+ │     ├── dto/
+ │
  ├── application/
  │     ├── commands/
  │     ├── handlers/
+ │     ├── sagas/
+ │
  ├── domain/
  │     ├── order/
  │     ├── financial/
  │     ├── ownership/
  │     ├── catalog/
+ │
  ├── infrastructure/
  │     ├── db/
+ │     ├── event-store/
  │     ├── repositories/
+ │     ├── messaging/
  │     ├── services/
+ │
  └── shared/
-
-------------------------------------------------------------
-
-========================
 FRONTEND ARCHITECTURE
-========================
-
-10. FRONTEND OVERVIEW
+13. FRONTEND OVERVIEW
 
 Frontend is server-authoritative.
 
 UI reflects backend state.
-UI does NOT decide lifecycle.
+
+Frontend must never simulate lifecycle.
 
 Layers:
 
-1. Pages Layer
-2. Module Layer
-3. API Client Layer
-4. UI Logic Layer
-5. Shared Components Layer
+Pages Layer
 
-------------------------------------------------------------
+Modules Layer
 
-11. PAGES LAYER
+API Client Layer
+
+UI Logic Layer
+
+Shared Components Layer
+
+14. PAGES LAYER
 
 Location:
+
 frontend/pages/
 
 Responsibilities:
 
-- Route-level composition
-- Data fetching
-- Render modules
+Route composition
 
-No business logic.
+Page-level layout
 
-------------------------------------------------------------
+Data fetching
 
-12. MODULE LAYER
+No business logic allowed.
+
+15. MODULE LAYER
 
 Location:
+
 frontend/modules/
 
-Each domain has a module:
+Each domain module contains:
 
-- order/
-- financial/
-- ownership/
-- catalog/
+orders/
+financial/
+ownership/
+catalog/
 
 Responsibilities:
 
-- Feature-level UI
-- API calls
-- State display
-- Conditional rendering
+UI components
 
-------------------------------------------------------------
+Feature-level state
 
-13. API CLIENT LAYER
+Interaction handling
+
+16. API CLIENT LAYER
 
 Location:
+
 frontend/shared/api/
 
 Responsibilities:
 
-- Axios / Fetch configuration
-- Attach JWT
-- Handle errors
-- Send commands to backend
+HTTP client configuration
 
-No state mutation.
+Attach JWT
 
-------------------------------------------------------------
+Handle errors
 
-14. UI LOGIC RULE
+Dispatch commands
 
-Frontend must:
+The client must never simulate server logic.
 
-- Read order.status from backend
-- Show buttons conditionally
-- Send POST command to change state
-- Wait for server response
-- Refresh state
+17. UI LIFECYCLE RULE
+
+Frontend must follow:
+
+Read state from backend
+Display allowed actions
+Send POST command
+Wait for server response
+Refresh state
 
 Forbidden:
 
-- setOrderStatus(...)
-- Local lifecycle simulation
-- Skipping server validation
+setOrderStatus()
+Local lifecycle simulation
+Skipping backend validation
 
-------------------------------------------------------------
+Server remains authoritative.
 
-15. ROLE-BASED RENDERING
+18. ROLE-BASED UI RENDERING
 
-UI shows actions based on:
-
-- User role
-- Order state
+Frontend may conditionally display actions.
 
 Example:
 
 Trader:
-- Cancel
-- Pickup
-- Close financial
+
+Cancel
+Pickup
+Financial closing
 
 Supplier:
-- Accept
-- Prepare
-- Mark ready
+
+Accept order
+Prepare order
+Mark ready
 
 Admin:
-- Audit view
-- Override (if allowed)
 
-Frontend does not enforce security.
-Backend remains authoritative.
+Audit view
+Management actions
 
-------------------------------------------------------------
+Security enforcement always remains backend responsibility.
 
-16. GLOBAL RULES
+19. GLOBAL CODE RULES
 
-- No business logic in controllers
-- No lifecycle logic in frontend
-- No direct SQL outside repositories
-- No mutation of financial ledger
-- No cross-aggregate mutation in domain
-- No state change without audit log entry
+The system forbids:
 
-------------------------------------------------------------
+Business logic in controllers
+
+Lifecycle simulation in frontend
+
+Direct SQL outside repositories
+
+Event mutation
+
+Financial ledger mutation
+
+Cross-aggregate mutation in domain
+
+State changes without domain events
+
+Violations are architecture failures.
 
 FINAL CODE ARCHITECTURE STATEMENT
 
-Arsan uses:
+Arsan implements:
 
-Hybrid Transactional Backend
-Strict Domain Layer
-Append-only Financial Ledger
-Audit Event Log
-Server-Authoritative Frontend
-Tenant-Scoped Authorization
-Optimistic Concurrency
+Domain Driven Design
+
+Event-driven lifecycle
+
+Append-only financial ledger
+
+Deterministic projections
+
+Server-authoritative frontend
+
+Strict tenant isolation
+
+Optimistic concurrency
+
+Process Manager orchestration
 
 Code must reflect architecture.
+
 Architecture must never be bypassed.
