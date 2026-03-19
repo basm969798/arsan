@@ -5,9 +5,9 @@ Authoritative Historical Reconciliation Document
 
 1. PURPOSE
 
-This document records architectural inconsistencies discovered across the system design documentation and defines the correct authoritative interpretation.
+This document records architectural inconsistencies discovered across system design documents and defines the final authoritative resolutions.
 
-Goals:
+Goals
 
 Identify conflicting definitions across documents
 
@@ -15,13 +15,17 @@ Prevent incorrect AI-generated implementations
 
 Provide historical traceability
 
-Clarify authoritative architecture
+Clarify and enforce authoritative architecture
 
-Stabilize the architecture for long-term development
+Stabilize the system for long-term development
 
-This document does not override architectural authority.
+Authority Note
 
-It exists to clarify conflicts between historical documents.
+This document does NOT override SYSTEM_INVARIANTS.md.
+
+However:
+
+All resolutions defined here are MANDATORY and must be enforced across all implementations.
 
 2. ARCHITECTURAL AUTHORITY HIERARCHY
 
@@ -41,417 +45,453 @@ SYSTEM_API_CONTRACT.md
 
 Implementation details
 
+Rule
+
 If conflict exists:
 
-SYSTEM_INVARIANTS.md prevails.
+SYSTEM_INVARIANTS.md PREVAILS
 
 3. ORDER LIFECYCLE MODEL INCONSISTENCY
 3.1 Problem
 
-Different documents defined different order lifecycle models.
+Multiple conflicting lifecycle definitions existed:
 
-Version A — STATE_MACHINE_MATRIX
+STATE MACHINE
+
 DRAFT
+
 SUBMITTED
+
 OFFERED
+
 ACCEPTED
+
 PREPARING
+
 READY
+
 COMPLETED
+
 CANCELLED
+
 REJECTED
-Version B — DATA_MODEL
+
+DATA MODEL
+
 NEW
+
 WAITING_FOR_SUPPLIER
+
 ACCEPTED
+
 PREPARING
+
 READY_FOR_PICKUP
+
 RECEIVED
+
 COMPLETED
+
 CANCELLED
-Version C — EVENT_MODEL
+
+EVENT MODEL
+
 READY → RECEIVED
+
 RECEIVED → COMPLETED
-3.2 Architectural Problem
 
-Three lifecycle definitions existed simultaneously.
+3.2 Architectural Impact
 
-This creates ambiguity in:
+This caused ambiguity in:
 
-event sourcing
+Event sourcing
 
-lifecycle validation
+Lifecycle validation
 
-command validation
+Command validation
 
 API responses
 
-projection logic
+Projection logic
 
-Example ambiguity:
+3.3 Resolution (MANDATORY)
 
-SUBMITTED
-vs
-WAITING_FOR_SUPPLIER
-3.3 Correct Authoritative Lifecycle
-
-The correct lifecycle states are:
+The single authoritative lifecycle is:
 
 DRAFT
-SUBMITTED
-OFFERED
-ACCEPTED
-PREPARING
-READY
-RECEIVED
-COMPLETED
-CANCELLED
-REJECTED
+→ SUBMITTED
+→ OFFERED
+→ ACCEPTED
+→ PREPARING
+→ READY
+→ RECEIVED
+→ COMPLETED
+→ CANCELLED
+→ REJECTED
+Rules
 
-These states represent the authoritative event lifecycle.
+MUST be used in all domain logic
+
+MUST be enforced in aggregates
+
+MUST be reflected in SYSTEM_STATE_MACHINE_MATRIX.md
+
+Any deviation is INVALID
 
 4. PROJECTION STATE MAPPING
 
-Database projection states may differ from event lifecycle states.
+Projection states may differ from lifecycle states.
 
-Example mapping:
-
-Event Lifecycle	Projection State
+Example
+Event State	Projection State
 SUBMITTED	WAITING_FOR_SUPPLIER
 READY	READY_FOR_PICKUP
+Rules (MANDATORY)
 
-Projection states exist only for:
+Projections are read models only
 
-UI clarity
+MUST NOT contain business logic
 
-API readability
+MUST NOT define lifecycle authority
 
-reporting
+Event lifecycle is the single source of truth
 
-Projection states must never replace event lifecycle authority.
+Violation = critical architectural failure
 
 5. PICKUP TRANSITION INCONSISTENCY
-5.1 Historical Definitions
+Problem
 
-STATE MACHINE previously defined:
+Mismatch:
 
 READY → COMPLETED
+vs
 
-However EVENT MODEL defined:
+READY → RECEIVED → COMPLETED
 
-READY → RECEIVED
-5.2 Problem
+Resolution (MANDATORY)
+READY → RECEIVED → COMPLETED
+RECEIVED Represents
 
-The lifecycle included a state not defined in the state machine.
+QR validation
 
-RECEIVED
+Physical pickup
 
-This created inconsistency across:
+Financial phase activation
 
-lifecycle validation
+Rules
 
-financial phase logic
+Cancellation is FORBIDDEN after RECEIVED
 
-pickup process
+Financial operations start ONLY after RECEIVED
 
-5.3 Correct Lifecycle
+6. DOMAIN EVENTS VS LEDGER EVENTS
+Problem
 
-Pickup transition must be:
+Confusion between:
 
-READY → RECEIVED
-RECEIVED → COMPLETED
+Domain events
 
-RECEIVED represents:
+Financial (ledger) events
 
-QR verification
+Resolution (MANDATORY)
 
-physical pickup confirmation
+Two strictly separate systems:
 
-financial phase opening
+Domain Events
 
-Cancellation becomes permanently disabled after RECEIVED.
+Stored in: system_events
 
-6. FINANCIAL EVENT NAMING INCONSISTENCY
-
-Two different event systems exist.
-
-6.1 Domain Events
-
-Stored in:
-
-system_events
+Represent business lifecycle
 
 Examples:
 
 ORDER_ACCEPTED
-ORDER_PREPARING
+
 ORDER_READY
+
 ORDER_RECEIVED
+
 ORDER_COMPLETED
 
-FINANCIAL_CASH_REGISTERED
-FINANCIAL_DEBT_REGISTERED
-FINANCIAL_PAYMENT_REGISTERED
-FINANCIAL_BALANCE_ZERO
-6.2 Ledger Entries
-
-Stored in:
-
-financial_events
-
-Ledger event types:
-
-CASH
-DEBT
-PAYMENT
-TRANSFER
-6.3 Problem
-
-The architecture previously did not clearly distinguish between:
-
-Domain Event
-vs
-Ledger Entry
-
-Incorrect implementations could write domain events into the ledger table.
-
-6.4 Correct Model
-
-Two separate immutable event streams exist.
-
-Domain Events
-
-Business lifecycle events.
-
-Stored in:
-
-system_events
 Financial Ledger Events
 
-Accounting records.
+Stored in: financial_events
 
-Stored in:
+Represent accounting records
 
-financial_events
+Types:
 
-These streams must never be mixed.
+CASH
 
-7. PRICE LOCK EVENT INCONSISTENCY
+DEBT
 
-Previous documentation referenced:
+PAYMENT
 
-PRICE_LOCKED
+TRANSFER
 
-However this event does not exist in the event model.
+Rules
 
-Correct Model
+Domain events MUST NOT be stored in financial_events
 
-Price locking is not a financial event.
+Ledger events MUST NOT be stored in system_events
 
-Price lock occurs as a side effect of:
+Mixing = critical data integrity violation
+
+7. PRICE LOCK MODEL
+Problem
+
+Undefined event: PRICE_LOCKED
+
+Resolution (MANDATORY)
+
+Price locking is NOT an event
+
+Occurs as a side effect of:
 
 ORDER_ACCEPTED
-or
+
 OFFER_SELECTED
 
-At that moment:
+Rules
 
-orders.locked_price is set
-order_items.price_snapshot is frozen
+locked_price MUST be immutable
 
-Financial events begin only after:
+price_snapshot MUST be frozen
 
-ORDER_RECEIVED
-8. OFFER EVENT NAMING INCONSISTENCY
+No recalculation allowed
 
-Two names appeared for the same concept.
+Financial phase starts only after RECEIVED
+
+8. OFFER EVENT NAMING
+Problem
 
 OFFER_ACCEPTED
-OFFER_SELECTED
-Correct Model
-
-Correct event name:
 
 OFFER_SELECTED
 
-Reason:
+Resolution (MANDATORY)
 
-Trader selects an offer from multiple suppliers.
+Correct event:
 
-Supplier does not accept the order in public requests.
+OFFER_SELECTED
+
+Rules
+
+MUST be used everywhere
+
+OFFER_ACCEPTED is INVALID
 
 9. API STATE VS EVENT STATE
-
-API responses expose projection states such as:
-
-WAITING_FOR_SUPPLIER
-READY_FOR_PICKUP
-
-Event lifecycle states are:
-
-SUBMITTED
-READY
-Correct Model
+Problem
 
 API exposes projection states.
 
-Event lifecycle states remain internal to the domain.
+Resolution (MANDATORY)
 
-Projection tables provide API-friendly representations.
+API MUST expose projection states
+
+Domain MUST use event lifecycle states
+
+Mapping MUST be explicit
 
 10. AGGREGATE VERSION AUTHORITY
-
-Two version sources exist:
-
-system_events.version
-orders.version
 Problem
 
-Potential ambiguity regarding version authority.
+system_events.version
 
-Correct Model
+orders.version
 
-Authoritative version:
+Resolution (MANDATORY)
+
+Authoritative source:
 
 system_events.version
 
-orders.version exists only as a projection cache used for optimistic locking.
+Rules
 
-Event store version remains authoritative.
+orders.version = projection cache only
+
+MUST NOT be used as source of truth
 
 11. PROJECTION AUTHORITY
+Resolution (MANDATORY)
 
-The database contains:
+system_events = source of truth
 
-orders.status
+Rules
 
-This may be misinterpreted as authoritative state.
+Projections MUST be rebuildable
 
-Correct Model
+MUST be idempotent
 
-Authoritative lifecycle state must be derived from:
-
-system_events
-
-Projection tables are:
-
-read models
-performance optimizations
-UI representations
-
-They must always be rebuildable from event history.
+Direct mutation is FORBIDDEN
 
 12. PROJECTION VS SAGA RESPONSIBILITY
+Event Flow
+Event → Projection → Read Model
+Event → Saga → Command
+Rules
+Projection MUST NOT:
 
-Correct event-driven architecture flow:
+Emit events
 
-Event → Projection → Read Model Update
-Event → Saga → Command Dispatch
+Dispatch commands
 
-Projection handlers must:
+Mutate aggregates
 
-update read models
+Saga:
 
-remain idempotent
+ONLY component allowed to dispatch commands
 
-Projection handlers must never:
+13. OWNERSHIP TRANSFER FLOW
+Execution Flow
+OWNERSHIP_TRANSFER_ACCEPTED
+→ Saga
+→ RegisterFinancialTransferCommand
+→ Ledger Entry
+→ Projection Update
+Requirements
 
-emit events
-dispatch commands
-mutate aggregates
+Atomic
 
-Cross-domain coordination occurs only through:
+Event-driven
 
-Process Manager / Saga
-13. OWNERSHIP TRANSFER EXECUTION FLOW
+Financially consistent
 
-Correct execution flow:
-
-OWNERSHIP_TRANSFER_ACCEPTED event
-→ Saga listens to event
-→ Saga dispatches RegisterFinancialTransferCommand
-→ financial_events ledger entry created
-→ ownership projection updated
-
-Ownership transfer must remain:
-
-atomic
-
-event driven
-
-ledger consistent
-
-14. OFFER DOMAIN LIFECYCLE
-
-Offer lifecycle must follow:
-
+14. OFFER LIFECYCLE
 CREATED
-SELECTED
-REJECTED
+→ SELECTED
+→ REJECTED
+Rules
 
-Rules:
+Only ONE selected offer per order
 
-only one SELECTED offer per order
-offers do not mutate order state unless selected
+Rejection MUST NOT affect order lifecycle
 
-Offer rejection does not change order lifecycle.
-
-15. OWNERSHIP TRANSFER LIFECYCLE
-
-Ownership transfer lifecycle:
-
+15. OWNERSHIP LIFECYCLE
 PENDING
-ACCEPTED
-REJECTED
+→ ACCEPTED
+→ REJECTED
+Rules
 
-Acceptance triggers:
+ACCEPTED triggers financial transfer
 
-financial transfer event
-ownership projection update
+Independent from order lifecycle
 
-Ownership lifecycle is independent from order lifecycle.
+16. CODE-LEVEL CONSISTENCY RULES
+16.1 Event Naming (MANDATORY)
+OFFER_SELECTED → offer-selected.event.ts
+16.2 Aggregate Structure (MANDATORY)
 
-16. FINAL ARCHITECTURAL MODEL
+All aggregates MUST be event-sourced.
 
-After reconciliation the architecture guarantees:
+Required methods:
 
-Single authoritative lifecycle
-Strict event sourcing discipline
-Clear separation between domain events and ledger entries
-Projection cache clarity
-Saga-controlled cross-domain coordination
+replayEvents()
+
+applyEvent()
+
+getUncommittedEvents()
+
+Direct mutation is FORBIDDEN
+
+16.3 Projection Location (MANDATORY)
+src/projections/{domain}/
+
+NOT allowed:
+
+domain/
+
+application/
+
+16.4 Financial Separation (MANDATORY)
+financial_events ≠ system_events
+16.5 Folder Structure (MANDATORY)
+src/
+ ├── api/
+ ├── application/
+ ├── domain/
+ ├── infrastructure/
+ ├── projections/
+ └── shared/
+16.6 Module Structure (MANDATORY)
+src/modules/{domain}/
+  ├── domain/
+  ├── application/
+  ├── infrastructure/
+  ├── projections/
+16.7 Event Flow (MANDATORY)
+
+Only Sagas may dispatch commands
+Projections MUST NEVER dispatch commands
+
+17. FINAL ARCHITECTURAL GUARANTEES
+
+After applying all resolutions:
+
+Single lifecycle definition
+
+Strict event sourcing
+
 Immutable financial ledger
-Deterministic event replay
+
+Clear separation of concerns
+
+Deterministic replay
+
 Tenant isolation
-Idempotent command execution
-17. ARCHITECTURAL MATURITY
 
-After resolving inconsistencies the system becomes:
+Idempotent execution
 
-Event-Sourcing Consistent
-Ledger Safe
-Replay Deterministic
-Tenant Isolated
-AI Implementable
-Production Grade
+18. FINAL ARCHITECTURAL MODEL
 
-Architecture maturity is comparable to systems used in:
+The system is:
+
+Event-Sourcing consistent
+
+Ledger-safe
+
+Replay deterministic
+
+Tenant-isolated
+
+AI-implementable
+
+Production-grade
+
+Comparable to:
 
 Stripe ledger architecture
 
 Shopify order engine
 
-Uber marketplace services
+Uber marketplace systems
 
+19. FINAL RESOLUTION DECISIONS (AUTHORITATIVE)
+Lifecycle
+DRAFT → SUBMITTED → OFFERED → ACCEPTED → PREPARING → READY → RECEIVED → COMPLETED
+Event Authority
+
+SYSTEM_EVENT_MODEL.md is the source of truth
+
+Financial Separation
+system_events ≠ financial_events
+Aggregate Model
+
+All aggregates MUST be event-sourced
+
+Projection Authority
+system_events = source of truth
+Execution Flow
+Event → Saga → Command → Event
 FINAL STATEMENT
 
-This document ensures that all historical inconsistencies are resolved and the system architecture remains:
+This document defines the authoritative resolved architecture.
 
-Deterministic
-Auditable
-Replay-safe
-Financially consistent
-Tenant-isolated
-Production-grade
+Any implementation that violates these rules is:
 
-All future implementations must follow the corrected architectural model described in this document.
+INVALID
+
+ARCHITECTURALLY UNSAFE
+
+REQUIRES CORRECTION
